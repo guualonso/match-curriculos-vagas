@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtualenv
+.venv/
+venv/
+env/
+
+# Variáveis de ambiente — NUNCA commitar o .env real
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Dados brutos e processados (podem conter currículos reais)
+data/raw/
+data/processado/
+
+# Banco SQLite gerado localmente
+*.db
+*.sqlite3
+
+# Logs
+*.log
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db

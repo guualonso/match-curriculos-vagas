@@ -1,6 +1,5 @@
 """
-Módulo utilitário para leitura de arquivos.
-Suporta PDF (via PyMuPDF) e DOCX (via python-docx).
+Utilitário para leitura de arquivos.
 """
 
 from __future__ import annotations
@@ -9,7 +8,7 @@ import io
 from pathlib import Path
 from typing import Union
 
-import fitz  # PyMuPDF
+import fitz
 from docx import Document
 
 
@@ -25,12 +24,7 @@ class LeitorArquivo:
     ) -> str:
         """
         Lê o conteúdo de texto de um arquivo.
-
-        Args:
-            origem: Caminho do arquivo, bytes ou BytesIO.
-            nome_arquivo: Nome do arquivo (necessário quando origem é bytes/BytesIO).
-
-        Returns:
+        Retorna:
             Texto extraído como string.
         """
         if isinstance(origem, (str, Path)):
@@ -103,14 +97,10 @@ class LeitorArquivo:
         """Verifica se o formato do arquivo é suportado."""
         return Path(nome_arquivo).suffix.lower() in self.FORMATOS_SUPORTADOS
 
-
-# Instância padrão
 leitor = LeitorArquivo()
-
 
 def ler_arquivo(
     origem: Union[str, Path, bytes, io.BytesIO],
     nome_arquivo: str = "",
 ) -> str:
-    """Função de conveniência para leitura de arquivo."""
     return leitor.ler(origem, nome_arquivo)

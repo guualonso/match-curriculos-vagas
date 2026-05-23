@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+
+# Banco de dados
+*.db
+*.sqlite3
+
+# Dados processados e raw (não versionar dados)
+data/raw/
+data/processado/*.json
+
+# Notebooks (opcional — remova essa linha se quiser versionar)
+notebooks/
+
+# Manter a estrutura das pastas vazias
+!data/processado/.gitkeep
+!data/raw/.gitkeep

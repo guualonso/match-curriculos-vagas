@@ -1,11 +1,10 @@
 """
 Testes unitários para os módulos principais.
-Execute com: pytest tests/ -v
 """
 
 import pytest
 
-from src.preprocessamento.text_cleaner import TextCleaner
+from src.preprocessamento.limpador_texto import TextCleaner
 from src.extraction.skills_extractor import SkillsExtractor
 from src.matching.matcher import ResumeJobMatcher
 

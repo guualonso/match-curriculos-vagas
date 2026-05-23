@@ -49,9 +49,9 @@ app.include_router(router, prefix="/api/v1")
 @app.on_event("startup")
 def on_startup():
     create_tables()
-    print("✅  Banco de dados inicializado.")
-    print("🌐  Interface web: http://localhost:8000")
-    print("📖  Documentação: http://localhost:8000/docs")
+    print("Banco de dados inicializado.")
+    print("Interface web: http://localhost:8000")
+    print("Documentação: http://localhost:8000/docs")
 
 
 @app.get("/health", response_model=HealthResponse, tags=["Sistema"])

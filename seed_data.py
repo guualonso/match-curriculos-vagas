@@ -3,7 +3,7 @@ import os
 sys.path.insert(0, os.path.dirname(__file__))
 
 from app.database import SessionLocal, create_tables, Job, Resume
-from src.preprocessamento.text_cleaner import clean_text
+from src.preprocessamento.limpador_texto import clean_text
 from src.extraction.skills_extractor import extractor as skills_extractor
 
 # ---------------------------------------------------------------------------

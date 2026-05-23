@@ -1,14 +1,18 @@
-"""
-Rotas da API FastAPI.
-Endpoints para gerenciamento de vagas, upload de currículos e matching.
-"""
-
 from __future__ import annotations
 
 import io
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
 from sqlalchemy.orm import Session
 
 from app.database import Job, MatchHistory, Resume, get_db
@@ -23,17 +27,85 @@ from app.schemas import (
     QuickMatchResponse,
     ResumeResponse,
 )
+from src.preprocessamento.limpador_texto import limpar_texto as clean_text
 from src.extraction.skills_extractor import extrator as skills_extractor
-from src.matching.matcher import ResumeJobMatcher
-from src.preprocessamento.text_cleaner import limpar_texto as clean_text
-from src.utils.file_reader import leitor as file_reader
+from src.utils.leitor_arquivo import leitor as file_reader
+from src.matching.matcher import MatcherCurriculoVaga as ResumeJobMatcher
 
 router = APIRouter()
 matcher = ResumeJobMatcher()
 
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+
+
+async def processar_upload(file: UploadFile):
+    """
+    Processa upload de currículo:
+    - valida formato
+    - extrai texto
+    - limpa texto
+    - extrai skills
+    """
+
+    nome_arquivo = file.filename or "curriculo"
+
+    if not file_reader.formato_suportado(nome_arquivo):
+        raise HTTPException(
+            status_code=400,
+            detail="Formato não suportado. Use PDF, DOCX ou TXT.",
+        )
+
+    content = await file.read()
+
+    if not content:
+        raise HTTPException(
+            status_code=400,
+            detail="Arquivo vazio.",
+        )
+
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail="Arquivo muito grande. Máximo permitido: 10MB.",
+        )
+
+    try:
+        raw_text = file_reader.ler(
+            io.BytesIO(content),
+            nome_arquivo=nome_arquivo,
+        )
+
+    except IOError as e:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Erro ao processar arquivo: {e}",
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro inesperado ao processar arquivo: {e}",
+        )
+
+    if not raw_text.strip():
+        raise HTTPException(
+            status_code=422,
+            detail="Não foi possível extrair texto do arquivo.",
+        )
+
+    cleaned = clean_text(raw_text)
+    skills = skills_extractor.extrair(raw_text)
+
+    return {
+        "nome_arquivo": nome_arquivo,
+        "raw_text": raw_text,
+        "cleaned_text": cleaned,
+        "skills": skills,
+    }
+
 
 # ---------------------------------------------------------------------------
-# Vagas
+# VAGAS
 # ---------------------------------------------------------------------------
 
 @router.post(
@@ -43,8 +115,14 @@ matcher = ResumeJobMatcher()
     summary="Cadastrar vaga",
     tags=["Vagas"],
 )
-def create_job(payload: JobCreate, db: Session = Depends(get_db)):
-    """Cadastra uma nova vaga e extrai suas habilidades técnicas automaticamente."""
+def create_job(
+    payload: JobCreate,
+    db: Session = Depends(get_db),
+):
+    """
+    Cadastra uma nova vaga.
+    """
+
     cleaned = clean_text(payload.description)
     skills = skills_extractor.extrair(payload.description)
 
@@ -56,9 +134,11 @@ def create_job(payload: JobCreate, db: Session = Depends(get_db)):
         extracted_skills=skills,
         source=payload.source,
     )
+
     db.add(job)
     db.commit()
     db.refresh(job)
+
     return job
 
 
@@ -73,10 +153,23 @@ def list_jobs(
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
-    """Retorna a lista de vagas cadastradas com paginação."""
+    """
+    Lista vagas cadastradas.
+    """
+
     total = db.query(Job).count()
-    jobs = db.query(Job).offset(skip).limit(limit).all()
-    return JobList(total=total, jobs=jobs)
+
+    jobs = (
+        db.query(Job)
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+
+    return JobList(
+        total=total,
+        jobs=jobs,
+    )
 
 
 @router.get(
@@ -85,11 +178,23 @@ def list_jobs(
     summary="Detalhar vaga",
     tags=["Vagas"],
 )
-def get_job(job_id: int, db: Session = Depends(get_db)):
-    """Retorna os detalhes de uma vaga específica."""
-    job = db.query(Job).filter(Job.id == job_id).first()
+def get_job(
+    job_id: int,
+    db: Session = Depends(get_db),
+):
+
+    job = (
+        db.query(Job)
+        .filter(Job.id == job_id)
+        .first()
+    )
+
     if not job:
-        raise HTTPException(status_code=404, detail="Vaga não encontrada.")
+        raise HTTPException(
+            status_code=404,
+            detail="Vaga não encontrada.",
+        )
+
     return job
 
 
@@ -99,17 +204,32 @@ def get_job(job_id: int, db: Session = Depends(get_db)):
     summary="Remover vaga",
     tags=["Vagas"],
 )
-def delete_job(job_id: int, db: Session = Depends(get_db)):
-    """Remove uma vaga do sistema."""
-    job = db.query(Job).filter(Job.id == job_id).first()
+def delete_job(
+    job_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    Remove uma vaga.
+    """
+
+    job = (
+        db.query(Job)
+        .filter(Job.id == job_id)
+        .first()
+    )
+
     if not job:
-        raise HTTPException(status_code=404, detail="Vaga não encontrada.")
+        raise HTTPException(
+            status_code=404,
+            detail="Vaga não encontrada.",
+        )
+
     db.delete(job)
     db.commit()
 
 
 # ---------------------------------------------------------------------------
-# Currículos
+# CURRÍCULOS
 # ---------------------------------------------------------------------------
 
 @router.post(
@@ -120,42 +240,26 @@ def delete_job(job_id: int, db: Session = Depends(get_db)):
     tags=["Currículos"],
 )
 async def upload_resume(
-    file: UploadFile = File(..., description="Arquivo PDF ou DOCX do currículo"),
+    file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ):
     """
-    Recebe upload de currículo (PDF ou DOCX),
-    extrai o texto e identifica as habilidades técnicas.
+    Faz upload de currículo.
     """
-    filename = file.filename or "currículo"
 
-    if not file_reader.formato_suportado(filename):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Formato não suportado. Use PDF, DOCX ou TXT.",
-        )
-
-    content = await file.read()
-    try:
-        raw_text = file_reader.ler(io.BytesIO(content), filename=filename)
-    except IOError as e:
-        raise HTTPException(status_code=422, detail=f"Erro ao processar arquivo: {e}")
-
-    if not raw_text.strip():
-        raise HTTPException(status_code=422, detail="Não foi possível extrair texto do arquivo.")
-
-    cleaned = clean_text(raw_text)
-    skills = skills_extractor.extrair(raw_text)
+    data = await processar_upload(file)
 
     resume = Resume(
-        filename=filename,
-        raw_text=raw_text,
-        cleaned_text=cleaned,
-        extracted_skills=skills,
+        filename=data["nome_arquivo"],
+        raw_text=data["raw_text"],
+        cleaned_text=data["cleaned_text"],
+        extracted_skills=data["skills"],
     )
+
     db.add(resume)
     db.commit()
     db.refresh(resume)
+
     return resume
 
 
@@ -165,16 +269,31 @@ async def upload_resume(
     summary="Detalhar currículo",
     tags=["Currículos"],
 )
-def get_resume(resume_id: int, db: Session = Depends(get_db)):
-    """Retorna os detalhes de um currículo processado."""
-    resume = db.query(Resume).filter(Resume.id == resume_id).first()
+def get_resume(
+    resume_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    Retorna currículo específico.
+    """
+
+    resume = (
+        db.query(Resume)
+        .filter(Resume.id == resume_id)
+        .first()
+    )
+
     if not resume:
-        raise HTTPException(status_code=404, detail="Currículo não encontrado.")
+        raise HTTPException(
+            status_code=404,
+            detail="Currículo não encontrado.",
+        )
+
     return resume
 
 
 # ---------------------------------------------------------------------------
-# Matching
+# MATCHING
 # ---------------------------------------------------------------------------
 
 @router.post(
@@ -185,75 +304,111 @@ def get_resume(resume_id: int, db: Session = Depends(get_db)):
 )
 def match_resume_with_jobs(
     resume_id: int,
-    top_n: Optional[int] = Query(10, ge=1, le=50, description="Número máximo de vagas retornadas"),
+    top_n: Optional[int] = Query(
+        10,
+        ge=1,
+        le=50,
+    ),
     db: Session = Depends(get_db),
 ):
     """
-    Compara um currículo cadastrado com todas as vagas do banco
-    e retorna as mais compatíveis ordenadas por score.
+    Faz matching entre currículo e vagas.
     """
-    resume = db.query(Resume).filter(Resume.id == resume_id).first()
+
+    resume = (
+        db.query(Resume)
+        .filter(Resume.id == resume_id)
+        .first()
+    )
+
     if not resume:
-        raise HTTPException(status_code=404, detail="Currículo não encontrado.")
+        raise HTTPException(
+            status_code=404,
+            detail="Currículo não encontrado.",
+        )
 
     jobs = db.query(Job).all()
+
     if not jobs:
-        raise HTTPException(status_code=404, detail="Nenhuma vaga cadastrada.")
+        raise HTTPException(
+            status_code=404,
+            detail="Nenhuma vaga cadastrada.",
+        )
 
     jobs_payload = [
-        {"id": str(j.id), "title": j.title, "description": j.description}
+        {
+            "id": str(j.id),
+            "title": j.title,
+            "description": j.description,
+        }
         for j in jobs
     ]
 
-    results = matcher.match_many(resume.raw_text, jobs_payload, top_n=top_n)
+    results = matcher.match_many(
+        resume.raw_text,
+        jobs_payload,
+        top_n=top_n,
+    )
 
-    # Persiste histórico no banco
     for r in results:
+
         history = MatchHistory(
             resume_id=resume.id,
-            job_id=int(r.job_id),
-            similarity_score=r.similarity_score,
-            similarity_percent=r.similarity_percent,
-            compatibility_level=r._get_compatibility_level(),
-            matching_skills=r.matching_skills,
-            missing_skills=r.missing_skills,
-            extra_skills=r.extra_skills,
+            job_id=int(r.id_vaga),
+            similarity_score=r.score_final,
+            similarity_percent=r.score_percentual,
+            compatibility_level=r.nivel_compatibilidade(),
+            matching_skills=r.skills_comum,
+            missing_skills=r.skills_ausentes,
+            extra_skills=r.skills_extras,
         )
+
         db.add(history)
+
     db.commit()
 
     return MatchResponse(
         resume_id=resume.id,
-        resume_filename=resume.filename,
+        resume_nome_arquivo=resume.filename,
         total_jobs_analyzed=len(jobs),
-        results=[MatchResultSchema(**r.para_dict()) for r in results],
+        results=[
+            MatchResultSchema(**r.para_dict())
+            for r in results
+        ],
     )
 
 
 @router.post(
     "/match/quick",
     response_model=QuickMatchResponse,
-    summary="Match rápido (sem upload)",
+    summary="Match rápido",
     tags=["Matching"],
 )
-def quick_match(payload: QuickMatchRequest):
+def quick_match(
+    payload: QuickMatchRequest,
+):
     """
-    Realiza um matching pontual entre texto de currículo e descrição de vaga,
-    sem necessidade de cadastro. Ideal para testes.
+    Matching rápido sem upload.
     """
+
     result = matcher.match_one(
         resume_text=payload.resume_text,
         job_text=payload.job_description,
         job_id="quick",
         job_title=payload.job_title or "Vaga",
     )
-    return QuickMatchResponse(result=MatchResultSchema(**result.para_dict()))
+
+    return QuickMatchResponse(
+        result=MatchResultSchema(
+            **result.para_dict()
+        )
+    )
 
 
 @router.post(
     "/match/upload-and-match",
     response_model=MatchResponse,
-    summary="Upload + match em uma requisição",
+    summary="Upload + Match",
     tags=["Matching"],
 )
 async def upload_and_match(
@@ -262,85 +417,104 @@ async def upload_and_match(
     db: Session = Depends(get_db),
 ):
     """
-    Faz upload do currículo e já retorna os melhores matches
-    em uma única chamada.
+    Faz upload do currículo e matching em uma única chamada.
     """
-    # Reutiliza lógica de upload
-    filename = file.filename or "curriculo"
-    if not file_reader.formato_suportado(filename):
-        raise HTTPException(status_code=400, detail="Formato não suportado.")
 
-    content = await file.read()
-    try:
-        raw_text = file_reader.ler(io.BytesIO(content), filename=filename)
-    except IOError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-
-    if not raw_text.strip():
-        raise HTTPException(status_code=422, detail="Arquivo sem texto legível.")
-
-    cleaned = clean_text(raw_text)
-    skills = skills_extractor.extrair(raw_text)
+    data = await processar_upload(file)
 
     resume = Resume(
-        filename=filename,
-        raw_text=raw_text,
-        cleaned_text=cleaned,
-        extracted_skills=skills,
+        filename=data["nome_arquivo"],
+        raw_text=data["raw_text"],
+        cleaned_text=data["cleaned_text"],
+        extracted_skills=data["skills"],
     )
+
     db.add(resume)
     db.commit()
     db.refresh(resume)
 
     jobs = db.query(Job).all()
+
     if not jobs:
+
         return MatchResponse(
             resume_id=resume.id,
-            resume_filename=resume.filename,
+            resume_nome_arquivo=resume.filename,
             total_jobs_analyzed=0,
             results=[],
         )
 
     jobs_payload = [
-        {"id": str(j.id), "title": j.title, "description": j.description}
+        {
+            "id": str(j.id),
+            "title": j.title,
+            "description": j.description,
+        }
         for j in jobs
     ]
-    results = matcher.match_many(raw_text, jobs_payload, top_n=top_n)
+
+    results = matcher.match_many(
+        data["raw_text"],
+        jobs_payload,
+        top_n=top_n,
+    )
 
     for r in results:
-        db.add(MatchHistory(
+
+        history = MatchHistory(
             resume_id=resume.id,
-            job_id=int(r.job_id),
-            similarity_score=r.similarity_score,
-            similarity_percent=r.similarity_percent,
-            compatibility_level=r._get_compatibility_level(),
-            matching_skills=r.matching_skills,
-            missing_skills=r.missing_skills,
-            extra_skills=r.extra_skills,
-        ))
+            job_id=int(r.id_vaga),
+            similarity_score=r.score_final,
+            similarity_percent=r.score_percentual,
+            compatibility_level=r.nivel_compatibilidade(),
+            matching_skills=r.skills_comum,
+            missing_skills=r.skills_ausentes,
+            extra_skills=r.skills_extras,
+        )
+
+        db.add(history)
+
     db.commit()
 
     return MatchResponse(
         resume_id=resume.id,
-        resume_filename=resume.filename,
+        resume_nome_arquivo=resume.filename,
         total_jobs_analyzed=len(jobs),
-        results=[MatchResultSchema(**r.para_dict()) for r in results],
+        results=[
+            MatchResultSchema(**r.para_dict())
+            for r in results
+        ],
     )
 
 
 # ---------------------------------------------------------------------------
-# Histórico
+# HISTÓRICO
 # ---------------------------------------------------------------------------
 
 @router.get(
     "/history/resume/{resume_id}",
     response_model=List[MatchHistoryResponse],
-    summary="Histórico de matches por currículo",
+    summary="Histórico de matches",
     tags=["Histórico"],
 )
-def get_history_by_resume(resume_id: int, db: Session = Depends(get_db)):
-    """Retorna o histórico de matchings de um currículo específico."""
-    resume = db.query(Resume).filter(Resume.id == resume_id).first()
+def get_history_by_resume(
+    resume_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    Retorna histórico de matches do currículo.
+    """
+
+    resume = (
+        db.query(Resume)
+        .filter(Resume.id == resume_id)
+        .first()
+    )
+
     if not resume:
-        raise HTTPException(status_code=404, detail="Currículo não encontrado.")
+        raise HTTPException(
+            status_code=404,
+            detail="Currículo não encontrado.",
+        )
+
     return resume.matches

@@ -12,18 +12,14 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Session, relationship, sessionmaker
 
-# ---------------------------------------------------------------------------
 # Configuração da conexão
-# ---------------------------------------------------------------------------
 
 def _get_database_url() -> str:
     url = os.getenv("DATABASE_URL", "")
     if not url:
-        # Fallback: SQLite local — zero configuração, ideal para dev
         db_path = os.path.join(os.path.dirname(__file__), "..", "resume_matcher.db")
         db_path = os.path.abspath(db_path).replace("\\", "/")
         return f"sqlite:///{db_path}"
-    # Garante que a URL está em ASCII puro (evita UnicodeDecodeError no Windows)
     return url.encode("utf-8").decode("ascii", errors="ignore") if url.isascii() else url
 
 
@@ -39,9 +35,7 @@ class Base(DeclarativeBase):
     pass
 
 
-# ---------------------------------------------------------------------------
 # Modelos
-# ---------------------------------------------------------------------------
 
 class Resume(Base):
     """Currículo enviado pelo usuário."""
@@ -52,7 +46,7 @@ class Resume(Base):
     filename = Column(String(255), nullable=False)
     raw_text = Column(Text, nullable=False)
     cleaned_text = Column(Text)
-    extracted_skills = Column(JSON)          # Dict[str, List[str]]
+    extracted_skills = Column(JSON)        
     created_at = Column(DateTime, default=datetime.utcnow)
 
     matches = relationship("MatchHistory", back_populates="resume", cascade="all, delete")
@@ -71,8 +65,8 @@ class Job(Base):
     company = Column(String(255))
     description = Column(Text, nullable=False)
     cleaned_text = Column(Text)
-    extracted_skills = Column(JSON)          # Dict[str, List[str]]
-    source = Column(String(100))             # linkedin, indeed, manual, etc.
+    extracted_skills = Column(JSON)         
+    source = Column(String(100))            
     created_at = Column(DateTime, default=datetime.utcnow)
 
     matches = relationship("MatchHistory", back_populates="job", cascade="all, delete")
@@ -94,9 +88,9 @@ class MatchHistory(Base):
     similarity_percent = Column(Float, nullable=False)
     compatibility_level = Column(String(20))  # Alto / Médio / Baixo
 
-    matching_skills = Column(JSON)    # List[str]
-    missing_skills = Column(JSON)     # List[str]
-    extra_skills = Column(JSON)       # List[str]
+    matching_skills = Column(JSON)    
+    missing_skills = Column(JSON)     
+    extra_skills = Column(JSON)      
 
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -109,10 +103,7 @@ class MatchHistory(Base):
             f"job={self.job_id} score={self.similarity_score:.2f}>"
         )
 
-
-# ---------------------------------------------------------------------------
 # Utilitários
-# ---------------------------------------------------------------------------
 
 def get_db() -> Generator[Session, None, None]:
     """Dependency para FastAPI: fornece uma sessão de banco e a fecha ao final."""

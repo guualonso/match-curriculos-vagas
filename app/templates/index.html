@@ -3,20 +3,21 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Resume Job Matcher</title>
+  <title>Currículo Job Matcher</title>
   <link rel="stylesheet" href="/static/css/style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>" />
 </head>
 <body>
 
-  <!-- ===== HEADER ===== -->
   <header class="header">
     <div class="header-inner">
       <div class="logo">
-        <span class="logo-icon">🎯</span>
-        <span class="logo-text">Resume <strong>Job Matcher</strong></span>
+        <span class="logo-icon"></span>
+        <span class="logo-text">Currículo <strong>Job Matcher</strong></span>
       </div>
       <nav class="nav">
         <button class="nav-btn active" data-tab="match">Análise</button>
+        <button class="nav-btn" data-tab="comparar">Comparativo</button>
         <button class="nav-btn" data-tab="jobs">Vagas</button>
         <button class="nav-btn" data-tab="history">Histórico</button>
       </nav>
@@ -24,101 +25,207 @@
     </div>
   </header>
 
-  <!-- ===== MAIN ===== -->
   <main class="main">
 
-    <!-- ── TAB: ANÁLISE ── -->
+    <!-- ANÁLISE -->
     <section id="tab-match" class="tab-content active">
 
       <div class="page-hero">
         <h1>Análise de Compatibilidade</h1>
-        <p>Envie um currículo e descubra as vagas mais compatíveis com seu perfil.</p>
+        <p>Envie um ou mais currículos e escolha as vagas para comparar.</p>
+      </div>
+
+      <!-- Contador de vagas -->
+      <div class="stats-bar">
+        <div class="stat-pill">
+          <span class="stat-pill-icon">📋</span>
+          <span id="total-vagas-badge">— vagas cadastradas</span>
+        </div>
+        <div class="stat-pill">
+          <span class="stat-pill-icon">⏱️</span>
+          <span id="tempo-estimado-badge">Tempo estimado: —</span>
+        </div>
+      </div>
+
+      <!-- Seletor de método -->
+      <div class="metodo-selector">
+        <button class="metodo-btn active" data-metodo="tfidf">
+          <span class="metodo-icon">📊</span>
+          <span class="metodo-nome">TF-IDF</span>
+          <span class="metodo-desc">Similaridade estatística</span>
+        </button>
+        <button class="metodo-btn" data-metodo="sbert">
+          <span class="metodo-icon">🧠</span>
+          <span class="metodo-nome">SBERT</span>
+          <span class="metodo-desc">Embeddings semânticos</span>
+          <span class="metodo-badge">Em breve</span>
+        </button>
       </div>
 
       <div class="two-col">
 
-        <!-- Upload -->
+        <!-- Upload múltiplo -->
         <div class="card">
-          <h2 class="card-title">📄 Currículo</h2>
+          <h2 class="card-title">📄 Currículos</h2>
 
           <div id="drop-zone" class="drop-zone">
             <div class="drop-icon">☁️</div>
-            <p>Arraste o arquivo aqui ou</p>
-            <label class="btn btn-outline" for="file-input">Selecionar arquivo</label>
-            <input id="file-input" type="file" accept=".pdf,.docx,.txt" hidden />
-            <p class="drop-hint">PDF, DOCX ou TXT</p>
+            <p>Arraste um ou mais arquivos aqui ou</p>
+            <label class="btn btn-outline" for="file-input">Selecionar arquivos</label>
+            <input id="file-input" type="file" accept=".pdf,.docx,.txt" multiple hidden />
+            <p class="drop-hint">PDF, DOCX ou TXT · múltiplos arquivos aceitos</p>
           </div>
 
-          <div id="file-info" class="file-info hidden">
-            <span id="file-icon">📄</span>
-            <span id="file-name"></span>
-            <button id="remove-file" class="btn-icon" title="Remover">✕</button>
-          </div>
+          <!-- Lista de arquivos selecionados -->
+          <div id="files-list" class="files-list hidden"></div>
 
+          <!-- Escopo das vagas -->
           <div class="form-group mt-16">
-            <label for="top-n">Número de vagas no resultado</label>
-            <input id="top-n" type="number" value="5" min="1" max="20" class="input-sm" />
+            <label for="vagas-escopo">Vagas para comparar</label>
+            <select id="vagas-escopo">
+              <option value="0">Todas as vagas</option>
+              <option value="10">Últimas 10 cadastradas</option>
+              <option value="100">Últimas 100 cadastradas</option>
+              <option value="300">Últimas 300 cadastradas</option>
+            </select>
           </div>
 
           <button id="btn-analyze" class="btn btn-primary btn-full mt-16" disabled>
             <span id="btn-analyze-text">Analisar</span>
             <span id="btn-analyze-spinner" class="spinner hidden"></span>
           </button>
+
+          <!-- Estimativa de tempo -->
+          <div id="tempo-manual" class="tempo-info hidden"></div>
         </div>
 
-        <!-- Quick match -->
+        <!-- Match rápido -->
         <div class="card">
           <h2 class="card-title">⚡ Match Rápido (texto)</h2>
           <p class="card-subtitle">Teste sem fazer upload — cole o texto diretamente.</p>
-
           <div class="form-group">
             <label for="quick-resume">Texto do currículo</label>
-            <textarea id="quick-resume" rows="5" placeholder="Cole aqui o texto do seu currículo…"></textarea>
+            <textarea id="quick-resume" rows="4" placeholder="Cole aqui o texto do currículo…"></textarea>
           </div>
           <div class="form-group">
             <label for="quick-job">Descrição da vaga</label>
-            <textarea id="quick-job" rows="5" placeholder="Cole aqui a descrição da vaga…"></textarea>
+            <textarea id="quick-job" rows="4" placeholder="Cole aqui a descrição da vaga…"></textarea>
           </div>
           <div class="form-group">
             <label for="quick-title">Título da vaga (opcional)</label>
             <input id="quick-title" type="text" placeholder="Ex: Desenvolvedor Python Sênior" />
           </div>
-
           <button id="btn-quick" class="btn btn-secondary btn-full">
             <span id="btn-quick-text">Comparar</span>
             <span id="btn-quick-spinner" class="spinner hidden"></span>
           </button>
-
           <div id="quick-result" class="quick-result hidden"></div>
         </div>
 
-      </div><!-- /two-col -->
+      </div>
 
-      <!-- Results -->
+      <!-- Resultados -->
       <div id="results-section" class="hidden mt-32">
         <div class="results-header">
           <h2>Resultados</h2>
           <span id="results-meta" class="results-meta"></span>
+          <span id="results-metodo-badge" class="metodo-tag"></span>
         </div>
+        <!-- Tabs de currículo quando há múltiplos -->
+        <div id="curriculos-tabs" class="curriculos-tabs hidden"></div>
         <div id="results-list" class="results-list"></div>
+        <div id="pagination" class="pagination hidden"></div>
       </div>
 
     </section>
 
-    <!-- ── TAB: VAGAS ── -->
-    <section id="tab-jobs" class="tab-content hidden">
+    <!-- COMPARATIVO -->
+    <section id="tab-comparar" class="tab-content hidden">
+      <div class="page-hero">
+        <h1>Comparativo TF-IDF vs SBERT</h1>
+        <p>Analise o mesmo currículo com os dois métodos e compare os resultados lado a lado.</p>
+      </div>
+      <div class="card">
+        <h2 class="card-title">📄 Currículo para comparação</h2>
+        <div id="drop-zone-cmp" class="drop-zone">
+          <div class="drop-icon">☁️</div>
+          <p>Arraste o arquivo aqui ou</p>
+          <label class="btn btn-outline" for="file-input-cmp">Selecionar arquivo</label>
+          <input id="file-input-cmp" type="file" accept=".pdf,.docx,.txt" hidden />
+          <p class="drop-hint">PDF, DOCX ou TXT</p>
+        </div>
+        <div id="file-info-cmp" class="file-info hidden">
+          <span id="file-icon-cmp">📄</span>
+          <span id="file-name-cmp"></span>
+          <button id="remove-file-cmp" class="btn-icon" title="Remover">✕</button>
+        </div>
+        <div class="form-group mt-16">
+          <label for="top-n-cmp">Número de vagas</label>
+          <input id="top-n-cmp" type="number" value="5" min="1" max="20" class="input-sm" />
+        </div>
+        <button id="btn-comparar" class="btn btn-primary btn-full mt-16" disabled>
+          <span id="btn-comparar-text">Comparar TF-IDF vs SBERT</span>
+          <span id="btn-comparar-spinner" class="spinner hidden"></span>
+        </button>
+        <div class="aviso-sbert mt-16">
+          🧠 <strong>SBERT (fase 2):</strong> O comparativo completo estará disponível após a implementação do modelo de embeddings semânticos. Por enquanto, o resultado SBERT é simulado para demonstração da interface.
+        </div>
+      </div>
+      <div id="comparativo-section" class="hidden mt-32">
+        <div class="comparativo-header">
+          <div class="comparativo-col-header tfidf-col">
+            <span class="metodo-icon-lg">📊</span>
+            <div>
+              <strong>TF-IDF + Cosseno</strong>
+              <p>Similaridade estatística por frequência de termos</p>
+            </div>
+          </div>
+          <div class="comparativo-col-header sbert-col">
+            <span class="metodo-icon-lg">🧠</span>
+            <div>
+              <strong>SBERT</strong>
+              <p>Embeddings semânticos — MiniLM-L12-v2</p>
+            </div>
+          </div>
+        </div>
+        <div id="comparativo-list" class="comparativo-list"></div>
+        <div id="comparativo-stats" class="comparativo-stats hidden">
+          <h3>Análise do comparativo</h3>
+          <div class="stats-grid">
+            <div class="stat-card">
+              <span class="stat-label">Correlação entre métodos</span>
+              <span id="stat-correlacao" class="stat-valor"></span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Maior diferença de score</span>
+              <span id="stat-maior-diff" class="stat-valor"></span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Concordância no top-3</span>
+              <span id="stat-concordancia" class="stat-valor"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
 
+    <!-- VAGAS -->
+    <section id="tab-jobs" class="tab-content hidden">
       <div class="page-hero">
         <h1>Gerenciar Vagas</h1>
         <p>Cadastre e visualize as vagas disponíveis para análise.</p>
       </div>
 
-      <div class="two-col">
+      <div class="stats-bar">
+        <div class="stat-pill">
+          <span class="stat-pill-icon">📋</span>
+          <span id="total-vagas-jobs">Carregando…</span>
+        </div>
+      </div>
 
-        <!-- Form -->
+      <div class="two-col">
         <div class="card">
           <h2 class="card-title">➕ Nova Vaga</h2>
-
           <div class="form-group">
             <label for="job-title">Título <span class="required">*</span></label>
             <input id="job-title" type="text" placeholder="Ex: Desenvolvedor Python Pleno" />
@@ -141,15 +248,12 @@
             <label for="job-desc">Descrição <span class="required">*</span></label>
             <textarea id="job-desc" rows="8" placeholder="Cole aqui a descrição completa da vaga…"></textarea>
           </div>
-
           <button id="btn-save-job" class="btn btn-primary btn-full">
             <span id="btn-job-text">Salvar Vaga</span>
             <span id="btn-job-spinner" class="spinner hidden"></span>
           </button>
           <div id="job-msg" class="msg hidden"></div>
         </div>
-
-        <!-- List -->
         <div class="card">
           <div class="card-title-row">
             <h2 class="card-title">📋 Vagas Cadastradas</h2>
@@ -159,34 +263,32 @@
             <p class="empty-state">Carregando vagas…</p>
           </div>
         </div>
-
       </div>
-
     </section>
 
-    <!-- ── TAB: HISTÓRICO ── -->
+    <!-- HISTÓRICO -->
     <section id="tab-history" class="tab-content hidden">
-
       <div class="page-hero">
         <h1>Histórico de Análises</h1>
         <p>Consulte análises anteriores pelo ID do currículo.</p>
       </div>
-
       <div class="card card-narrow">
         <div class="form-row">
           <input id="history-resume-id" type="number" placeholder="ID do currículo" min="1" />
+          <select id="history-metodo" style="width:130px;flex-shrink:0">
+            <option value="">Todos</option>
+            <option value="tfidf">TF-IDF</option>
+            <option value="sbert">SBERT</option>
+          </select>
           <button id="btn-load-history" class="btn btn-primary">Buscar</button>
         </div>
         <div id="history-list" class="history-list mt-16"></div>
       </div>
-
     </section>
 
   </main>
 
-  <!-- ===== TOAST ===== -->
   <div id="toast" class="toast hidden"></div>
-
   <script src="/static/js/app.js"></script>
 </body>
 </html>

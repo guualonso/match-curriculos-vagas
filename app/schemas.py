@@ -1,7 +1,3 @@
-"""
-Schemas Pydantic para validação de entrada/saída da API.
-"""
-
 from __future__ import annotations
 
 from datetime import datetime
@@ -9,10 +5,6 @@ from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-
-# ---------------------------------------------------------------------------
-# Jobs
-# ---------------------------------------------------------------------------
 
 class JobCreate(BaseModel):
     title: str = Field(..., min_length=2, max_length=255, examples=["Desenvolvedor Python Sênior"])
@@ -38,9 +30,6 @@ class JobList(BaseModel):
     jobs: List[JobResponse]
 
 
-# ---------------------------------------------------------------------------
-# Resumes
-# ---------------------------------------------------------------------------
 
 class ResumeResponse(BaseModel):
     id: int
@@ -50,10 +39,6 @@ class ResumeResponse(BaseModel):
 
     model_config = {"from_attributes": True}
 
-
-# ---------------------------------------------------------------------------
-# Matching
-# ---------------------------------------------------------------------------
 
 class MatchResultSchema(BaseModel):
     tfidf_score: float = 0.0
@@ -88,10 +73,6 @@ class QuickMatchResponse(BaseModel):
     result: MatchResultSchema
 
 
-# ---------------------------------------------------------------------------
-# History
-# ---------------------------------------------------------------------------
-
 class MatchHistoryResponse(BaseModel):
     id: int
     resume_id: int
@@ -106,10 +87,6 @@ class MatchHistoryResponse(BaseModel):
 
     model_config = {"from_attributes": True}
 
-
-# ---------------------------------------------------------------------------
-# Misc
-# ---------------------------------------------------------------------------
 
 class HealthResponse(BaseModel):
     model_config = {"protected_namespaces": ()}

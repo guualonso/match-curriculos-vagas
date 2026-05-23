@@ -1,75 +1,112 @@
-"""
-Módulo de extração de habilidades técnicas.
-Identifica skills de TI em currículos e descrições de vagas
-usando uma lista de referência organizada por categoria.
-"""
-
 from __future__ import annotations
 
 import re
 from typing import Dict, List, Set
 
-# ---------------------------------------------------------------------------
-# Base de habilidades técnicas por categoria
-# ---------------------------------------------------------------------------
-
 BASE_SKILLS: Dict[str, List[str]] = {
+
     "linguagens": [
         "python", "java", "javascript", "typescript", "kotlin", "swift",
         "cplusplus", "csharp", "go", "rust", "ruby", "php", "scala",
         "r", "matlab", "perl", "lua", "dart", "groovy", "cobol",
+        "assembly", "vba", "powershell", "bash", "shell",
     ],
+
     "frontend": [
         "html", "css", "reactjs", "vuejs", "angularjs", "angular",
         "svelte", "jquery", "bootstrap", "tailwind", "sass", "less",
-        "webpack", "vite", "nextjs", "nuxt",
+        "webpack", "vite", "nextjs", "nuxt", "storybook",
     ],
+
     "backend": [
         "nodejs", "django", "flask", "fastapi", "spring", "springboot",
         "laravel", "rails", "express", "aspnet", "dotnet", "quarkus",
-        "micronaut", "nestjs",
+        "micronaut", "nestjs", "strapi",
     ],
+
     "banco_de_dados": [
         "sql", "mysql", "postgresql", "sqlite", "oracle", "sqlserver",
         "mongodb", "redis", "cassandra", "dynamodb", "elasticsearch",
-        "neo4j", "firebase", "supabase",
+        "neo4j", "firebase", "supabase", "mariadb", "db2",
     ],
+
     "cloud": [
         "aws", "azure", "googlecloudplatform", "heroku", "digitalocean",
-        "vercel", "netlify", "oraclecloud", "ibmcloud",
+        "vercel", "netlify", "oraclecloud", "ibmcloud", "cloudflare",
     ],
+
     "devops": [
         "docker", "kubernetes", "jenkins", "githubactions", "gitlab",
         "terraform", "ansible", "prometheus", "grafana", "nginx",
-        "apache", "linux", "bash", "shell", "git",
+        "apache", "linux", "git", "circleci", "argocd", "helm",
+        "pulumi", "vagrant",
     ],
+
+    "infraestrutura": [
+        "vmware", "pfsense", "zabbix", "wireshark", "cisco",
+        "windowsserver", "activedirectory", "hypervv", "proxmox",
+        "virtualbox", "oraclevm", "samba", "putty", "nagios",
+        "openvpn", "mikrotik", "fortinet", "checkpoint",
+        "dhcp", "dns", "ftp", "ssh", "tcp", "vpn",
+        "firewall", "vlan", "routing", "switching",
+    ],
+
+    "sistemas_operacionais": [
+        "ubuntu", "debian", "centos", "redhat", "fedora", "kali",
+        "windows", "macos", "freebsd", "android", "ios",
+    ],
+
+    "seguranca": [
+        "cybersecurity", "pentest", "soc", "siem", "ids", "ips",
+        "owasp", "criptografia", "ssl", "tls", "oauth", "jwt",
+        "lgpd", "gdpr", "iso27001", "nist",
+    ],
+
     "dados": [
         "pandas", "numpy", "scipy", "matplotlib", "seaborn", "plotly",
         "tableau", "powerbi", "spark", "hadoop", "airflow", "dbt",
-        "kafka", "rabbitmq",
+        "kafka", "rabbitmq", "looker", "metabase", "qlik",
     ],
+
     "ia_ml": [
         "machinelearning", "deeplearning", "artificialintelligence",
         "naturallanguageprocessing", "tensorflow", "pytorch", "keras",
         "scikitlearn", "opencv", "huggingface", "langchain",
+        "xgboost", "lightgbm", "mlflow", "airflow",
     ],
+
     "metodologias": [
-        "scrum", "kanban", "agile", "devops", "tdd", "bdd", "ddd",
+        "scrum", "kanban", "agile", "tdd", "bdd", "ddd",
         "solid", "rest", "graphql", "soap", "microservices", "api",
+        "devops", "gitflow", "cleancode", "cleanarchitecture",
     ],
+
     "mobile": [
-        "android", "ios", "reactnative", "flutter", "xamarin", "ionic",
+        "reactnative", "flutter", "xamarin", "ionic", "swiftui",
+        "jetpackcompose",
     ],
+
     "testes": [
         "junit", "pytest", "jest", "selenium", "cypress", "postman",
-        "swagger", "sonarqube",
+        "swagger", "sonarqube", "testng", "mockito", "locust",
+        "gatling", "k6",
+    ],
+
+    "ferramentas": [
+        "git", "github", "gitlab", "bitbucket", "jira", "confluence",
+        "trello", "notion", "slack", "figma", "vscode",
+    ],
+
+    "erp": [
+        "sap", "salesforce", "servicenow", "totvs", "dynamics",
+        "sharepoint", "powerautomate", "powerbi",
     ],
 }
 
-# Conjunto plano para lookup rápido
-TODAS_SKILLS: Set[str] = {skill for skills in BASE_SKILLS.values() for skill in skills}
+TODAS_SKILLS: Set[str] = {
+    skill for skills in BASE_SKILLS.values() for skill in skills
+}
 
-# Aliases e variações comuns → forma canônica
 ALIASES: Dict[str, str] = {
     "js": "javascript",
     "ts": "typescript",
@@ -78,23 +115,50 @@ ALIASES: Dict[str, str] = {
     "c#": "csharp",
     ".net": "dotnet",
     "golang": "go",
+    "vb": "vba",
+    "ps1": "powershell",
+
     "react": "reactjs",
     "vue": "vuejs",
     "angular": "angularjs",
     "next": "nextjs",
     "next.js": "nextjs",
+
     "node": "nodejs",
     "node.js": "nodejs",
     "fast api": "fastapi",
     "asp.net": "aspnet",
     "spring boot": "springboot",
+
     "postgres": "postgresql",
     "mongo": "mongodb",
     "elastic": "elasticsearch",
     "sql server": "sqlserver",
+    "maria db": "mariadb",
+
     "gcp": "googlecloudplatform",
     "google cloud": "googlecloudplatform",
     "amazon web services": "aws",
+    "microsoft azure": "azure",
+
+    "active directory": "activedirectory",
+    "ad ds": "activedirectory",
+    "windows server": "windowsserver",
+    "hyper-v": "hypervv",
+    "hyper v": "hypervv",
+    "oracle vm": "oraclevm",
+    "virtual box": "virtualbox",
+    "pf sense": "pfsense",
+    "open vpn": "openvpn",
+
+    "cyber security": "cybersecurity",
+    "penetration test": "pentest",
+    "penetration testing": "pentest",
+
+    "red hat": "redhat",
+    "kali linux": "kali",
+    "mac os": "macos",
+
     "ml": "machinelearning",
     "dl": "deeplearning",
     "ai": "artificialintelligence",
@@ -102,19 +166,28 @@ ALIASES: Dict[str, str] = {
     "scikit learn": "scikitlearn",
     "scikit-learn": "scikitlearn",
     "hugging face": "huggingface",
+
     "k8s": "kubernetes",
     "github actions": "githubactions",
+
     "power bi": "powerbi",
     "power-bi": "powerbi",
     "apache spark": "spark",
+
+    "clean code": "cleancode",
+    "clean architecture": "cleanarchitecture",
+    "git flow": "gitflow",
+
+    "react native": "reactnative",
+    "jetpack compose": "jetpackcompose",
+    "swift ui": "swiftui",
+
+    "power automate": "powerautomate",
+    "ms dynamics": "dynamics",
 }
 
 
 class ExtratorSkills:
-    """
-    Extrai habilidades técnicas de um texto.
-    Retorna as skills encontradas agrupadas por categoria.
-    """
 
     def __init__(self):
         self.base = BASE_SKILLS
@@ -122,22 +195,13 @@ class ExtratorSkills:
         self.aliases = ALIASES
 
     def _normalizar(self, texto: str) -> str:
-        """Normalização mínima para matching de skills."""
         texto = texto.lower().strip()
         for alias, canonica in self.aliases.items():
             texto = re.sub(r"\b" + re.escape(alias) + r"\b", canonica, texto)
         return texto
 
-    def extrair(self, texto: str) -> Dict[str, List[str]]:
-        """
-        Extrai habilidades do texto e retorna agrupadas por categoria.
-
-        Args:
-            texto: Texto do currículo ou descrição da vaga.
-
-        Returns:
-            Dicionário com categorias como chaves e listas de skills.
-        """
+    """Quando precisa saber em qual categoria cada skill está, essa extração que utiliza no algoritmo de comparação"""
+    def extrair(self, texto: str) -> Dict[str, List[str]]: 
         normalizado = self._normalizar(texto)
         encontradas: Dict[str, List[str]] = {}
 
@@ -152,13 +216,13 @@ class ExtratorSkills:
 
         return encontradas
 
+    """Quando só precisa da lista de skills sem se importar com categoria, essa lista que vai pro banco de dados"""
     def extrair_lista(self, texto: str) -> List[str]:
-        """Retorna lista plana de todas as skills encontradas no texto."""
         categorizadas = self.extrair(texto)
         return [skill for skills in categorizadas.values() for skill in skills]
 
+    """Quando já tem uma skill específica e quer saber de onde ela veio, essa lista que é usada na interface web"""
     def categoria_da_skill(self, skill: str) -> str | None:
-        """Retorna a categoria de uma skill específica."""
         skill = skill.lower()
         for categoria, skills in self.base.items():
             if skill in skills:
@@ -166,15 +230,6 @@ class ExtratorSkills:
         return None
 
     def comparar(self, texto_curriculo: str, texto_vaga: str) -> Dict[str, List[str]]:
-        """
-        Compara as skills de um currículo com os requisitos de uma vaga.
-
-        Returns:
-            Dicionário com:
-                - em_comum : skills presentes em ambos
-                - ausentes  : skills da vaga que o currículo não tem
-                - extras    : skills do currículo além dos requisitos da vaga
-        """
         skills_curriculo = set(self.extrair_lista(texto_curriculo))
         skills_vaga = set(self.extrair_lista(texto_vaga))
 
@@ -184,16 +239,13 @@ class ExtratorSkills:
             "extras":    sorted(skills_curriculo - skills_vaga),
         }
 
-
-# Instância padrão
 extrator = ExtratorSkills()
 
-
 def extrair_skills(texto: str) -> Dict[str, List[str]]:
-    """Função de conveniência: extrai skills categorizadas."""
+    """Função extrai skills categorizadas."""
     return extrator.extrair(texto)
 
 
 def extrair_skills_lista(texto: str) -> List[str]:
-    """Função de conveniência: retorna lista plana de skills."""
+    """Função retorna lista plana de skills."""
     return extrator.extrair_lista(texto)

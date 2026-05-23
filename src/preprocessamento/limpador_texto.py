@@ -1,8 +1,3 @@
-"""
-Módulo de pré-processamento de texto.
-Realiza limpeza, normalização e tokenização para currículos e vagas.
-"""
-
 import re
 import unicodedata
 from typing import List
@@ -24,9 +19,7 @@ except OSError:
             "  python -m spacy download en_core_web_sm"
         )
 
-# Stopwords do domínio de RH e TI que o spaCy não remove por padrão
 STOPWORDS_DOMINIO = {
-    # Português
     "anos", "ano", "experiência", "experiencias", "empresa", "trabalho",
     "atividades", "desenvolvida", "desenvolvidas", "desenvolvido", "desenvolvidos",
     "responsável", "responsabilidades", "cargo", "função", "atuação",
@@ -34,13 +27,12 @@ STOPWORDS_DOMINIO = {
     "formação", "graduação", "cursando", "cursou", "bacharel", "tecnólogo",
     "profissional", "profissionais", "candidato", "candidatos",
     "vaga", "vagas",
-    # Inglês
     "years", "year", "experience", "company", "work", "activities",
     "responsible", "responsibilities", "position", "role", "knowledge",
     "skills", "skill", "degree", "bachelor", "candidate",
 }
 
-# Termos técnicos com caracteres especiais → forma normalizada
+
 NORMALIZACOES = {
     r"\bnode\.js\b": "nodejs",
     r"\bvue\.js\b": "vuejs",
@@ -56,52 +48,37 @@ NORMALIZACOES = {
     r"\bgcp\b": "googlecloudplatform",
 }
 
-
 class LimpadorTexto:
-    """Realiza limpeza e normalização de texto para análise NLP."""
 
     def __init__(self, remover_stopwords: bool = True, lematizar: bool = True):
         self.remover_stopwords = remover_stopwords
         self.lematizar = lematizar
 
     def remover_acentos(self, texto: str) -> str:
-        """Remove acentos e diacríticos unicode."""
         nfkd = unicodedata.normalize("NFKD", texto)
         return "".join(c for c in nfkd if not unicodedata.combining(c))
 
     def remover_caracteres_especiais(self, texto: str) -> str:
-        """Remove caracteres especiais mantendo letras, números e hífens."""
         texto = re.sub(r"[^\w\s\-]", " ", texto)
         texto = re.sub(r"\s+", " ", texto)
         return texto.strip()
 
     def remover_urls(self, texto: str) -> str:
-        """Remove URLs do texto."""
         return re.sub(r"https?://\S+|www\.\S+", " ", texto)
 
     def remover_emails(self, texto: str) -> str:
-        """Remove endereços de e-mail."""
         return re.sub(r"\S+@\S+\.\S+", " ", texto)
 
     def remover_telefones(self, texto: str) -> str:
-        """Remove números de telefone."""
         return re.sub(r"(\+?\d[\d\s\-\(\)]{7,}\d)", " ", texto)
 
     def normalizar_termos_tecnicos(self, texto: str) -> str:
-        """
-        Normaliza termos técnicos para garantir consistência no matching.
-        Ex: 'node.js' → 'nodejs', 'c++' → 'cplusplus'.
-        """
         texto = texto.lower()
         for padrao, substituto in NORMALIZACOES.items():
             texto = re.sub(padrao, substituto, texto)
         return texto
 
     def tokenizar_e_limpar(self, texto: str) -> List[str]:
-        """
-        Tokeniza via spaCy, remove stopwords e aplica lematização.
-        Retorna lista de tokens limpos.
-        """
         doc = nlp(texto)
         tokens = []
         for token in doc:
@@ -119,10 +96,6 @@ class LimpadorTexto:
         return tokens
 
     def limpar(self, texto: str) -> str:
-        """
-        Pipeline completo de limpeza. Retorna texto normalizado como string.
-        Usado como entrada para o vetorizador TF-IDF.
-        """
         if not texto or not isinstance(texto, str):
             return ""
 
@@ -136,14 +109,11 @@ class LimpadorTexto:
         return " ".join(tokens)
 
     def limpar_lote(self, textos: List[str]) -> List[str]:
-        """Aplica limpeza em lote para múltiplos documentos."""
         return [self.limpar(t) for t in textos]
 
 
-# Instância padrão reutilizável
 limpador = LimpadorTexto()
 
 
 def limpar_texto(texto: str) -> str:
-    """Função de conveniência: limpa e normaliza um texto."""
     return limpador.limpar(texto)

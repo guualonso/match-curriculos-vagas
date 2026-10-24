@@ -1,151 +1,94 @@
-"""
-Testes unitários para os módulos principais.
-"""
+"""Testes dos módulos principais: pré-processamento, extração de habilidades (ESCO) e matcher TF-IDF."""
 
-import pytest
-
-from src.preprocessamento.limpador_texto import TextCleaner
-from src.extraction.skills_extractor import SkillsExtractor
-from src.matching.matcher import ResumeJobMatcher
+from src.preprocessamento.limpador_texto import LimpadorTexto, detectar_idioma
+from src.extraction.skills_extractor import extrator
+from src.matching.matcher import MatcherCurriculoVaga
 
 
-# ---------------------------------------------------------------------------
-# TextCleaner
-# ---------------------------------------------------------------------------
-
-class TestTextCleaner:
+class TestLimpadorTexto:
     def setup_method(self):
-        self.cleaner = TextCleaner()
+        self.limpador = LimpadorTexto()
 
-    def test_remove_urls(self):
-        text = "Visite https://linkedin.com/in/fulano para mais detalhes."
-        result = self.cleaner.remove_urls(text)
-        assert "https" not in result
-        assert "linkedin" not in result
+    def test_remove_urls_e_emails(self):
+        texto = self.limpador.limpar("Veja https://linkedin.com/in/fulano ou fulano@email.com")
+        assert "https" not in texto and "@" not in texto
 
-    def test_remove_email(self):
-        text = "Contato: fulano@email.com"
-        result = self.cleaner.remove_emails(text)
-        assert "@" not in result
+    def test_normaliza_termos_tecnicos(self):
+        assert "nodejs" in self.limpador.normalizar_termos_tecnicos("Experiência com node.js")
 
-    def test_normalize_tech_terms(self):
-        text = "Experiência com node.js e vue.js"
-        result = self.cleaner.normalize_tech_terms(text)
-        assert "nodejs" in result
-        assert "vuejs" in result
+    def test_texto_vazio_ou_nulo(self):
+        assert self.limpador.limpar("") == ""
+        assert self.limpador.limpar(None) == ""
 
-    def test_clean_returns_string(self):
-        result = self.cleaner.clean("Desenvolvedor Python com 3 anos de experiência.")
-        assert isinstance(result, str)
-        assert len(result) > 0
+    def test_detecta_idioma(self):
+        assert detectar_idioma("Software engineer with experience in the design of APIs") == "en"
+        assert detectar_idioma("Desenvolvedor com experiência no desenvolvimento de APIs") == "pt"
 
-    def test_clean_empty_string(self):
-        assert self.cleaner.clean("") == ""
+    def test_remove_stopwords_do_ingles(self):
+        tokens = self.limpador.limpar("Engineer with experience in the design of services").split()
+        assert "the" not in tokens and "with" not in tokens
 
-    def test_clean_none(self):
-        assert self.cleaner.clean(None) == ""
+    def test_remove_stopwords_de_dominio_acentuadas(self):
+        assert "experiencia" not in self.limpador.limpar("Desenvolvedor com experiência em Python").split()
 
 
-# ---------------------------------------------------------------------------
-# SkillsExtractor
-# ---------------------------------------------------------------------------
+class TestExtratorSkills:
+    def test_base_esco_carregada(self):
+        assert extrator.total_conceitos_esco == 1284
 
-class TestSkillsExtractor:
+    def test_detecta_conceito_esco_pelo_rotulo(self):
+        assert "Python" in extrator.extrair_lista("Experience with Python and SQL")
+
+    def test_detecta_complemento(self):
+        assert "docker" in extrator.extrair_lista("Deploy com Docker e Kubernetes")
+
+    def test_nao_duplica_termo_coberto_pela_esco(self):
+        habilidades = extrator.extrair_lista("Python developer")
+        assert habilidades.count("Python") == 1 and "python" not in habilidades
+
+    def test_ignora_rotulos_ambiguos(self):
+        habilidades = extrator.extrair_lista("Less than two years, built from scratch at the R&D team")
+        assert habilidades == []
+
+    def test_r_maiusculo_isolado(self):
+        assert "R" in extrator.extrair_lista("Análise estatística em R e Python")
+
+    def test_comparar(self):
+        comparacao = extrator.comparar("Python, SQL, Docker", "Python, SQL, Kubernetes")
+        assert set(comparacao["em_comum"]) == {"Python", "SQL"}
+        assert comparacao["ausentes"] == ["kubernetes"]
+        assert comparacao["extras"] == ["docker"]
+
+
+class TestMatcherTfidf:
     def setup_method(self):
-        self.extractor = SkillsExtractor()
+        self.matcher = MatcherCurriculoVaga()
 
-    def test_extract_python(self):
-        text = "Experiência com Python e SQL."
-        result = self.extractor.extract_flat(text)
-        assert "python" in result
+    def test_score_entre_0_e_1(self):
+        resultado = self.matcher.match_one("Desenvolvedor Python com Docker", "Vaga Python com Docker")
+        assert 0.0 <= resultado.score_final <= 1.0
 
-    def test_extract_sql(self):
-        text = "Conhecimento em SQL e PostgreSQL."
-        result = self.extractor.extract_flat(text)
-        assert "sql" in result
-        assert "postgresql" in result
+    def test_textos_relacionados_pontuam_mais(self):
+        curriculo = "Python, FastAPI, PostgreSQL, Docker"
+        relacionado = self.matcher.match_one(curriculo, "Python, FastAPI, Docker")
+        sem_relacao = self.matcher.match_one(curriculo, "Contador com Excel e Word")
+        assert relacionado.score_final > sem_relacao.score_final
 
-    def test_extract_multiple_categories(self):
-        text = "Python, Docker, AWS, React, PostgreSQL"
-        result = self.extractor.extract(text)
-        categories = list(result.keys())
-        assert len(categories) >= 3
-
-    def test_alias_nodejs(self):
-        text = "Trabalhou com node.js e express"
-        result = self.extractor.extract_flat(text)
-        assert "nodejs" in result
-
-    def test_compare_matching(self):
-        resume = "Python, SQL, Docker, AWS"
-        job = "Python, SQL, Kubernetes"
-        comparison = self.extractor.compare(resume, job)
-        assert "python" in comparison["matching"]
-        assert "sql" in comparison["matching"]
-        assert "kubernetes" in comparison["missing"]
-        assert "docker" in comparison["extra"]
-
-    def test_get_skill_category(self):
-        assert self.extractor.get_skill_category("python") == "linguagens"
-        assert self.extractor.get_skill_category("docker") == "devops"
-        assert self.extractor.get_skill_category("xyz_desconhecido") is None
-
-
-# ---------------------------------------------------------------------------
-# ResumeJobMatcher
-# ---------------------------------------------------------------------------
-
-class TestResumeJobMatcher:
-    def setup_method(self):
-        self.matcher = ResumeJobMatcher()
-
-    def test_match_one_returns_score_between_0_and_1(self):
-        resume = "Desenvolvedor Python com experiência em FastAPI, PostgreSQL e Docker."
-        job = "Vaga para desenvolvedor Python com FastAPI e bancos relacionais."
-        result = self.matcher.match_one(resume, job)
-        assert 0.0 <= result.similarity_score <= 1.0
-
-    def test_high_similarity_for_identical_texts(self):
-        text = "Python, FastAPI, PostgreSQL, Docker, AWS, scikit-learn"
-        result = self.matcher.match_one(text, text)
-        assert result.similarity_score > 0.5
-
-    def test_low_similarity_for_unrelated_texts(self):
-        resume = "Contador com experiência em Excel e Word."
-        job = "Desenvolvedor Python com machine learning e AWS."
-        result = self.matcher.match_one(resume, job)
-        assert result.similarity_score < 0.5
-
-    def test_match_many_returns_sorted_results(self):
-        resume = "Python, FastAPI, PostgreSQL, Docker"
-        jobs = [
-            {"id": "1", "title": "Vaga Python", "description": "Python, FastAPI, Docker"},
-            {"id": "2", "title": "Vaga Java", "description": "Java, Spring Boot, MySQL"},
-            {"id": "3", "title": "Vaga Frontend", "description": "React, TypeScript, CSS"},
+    def test_match_many_ordenado_e_limitado(self):
+        vagas = [
+            {"id": "1", "title": "Python", "description": "Python, FastAPI, Docker"},
+            {"id": "2", "title": "Java", "description": "Java, Spring Boot, MySQL"},
+            {"id": "3", "title": "Front", "description": "React, TypeScript, CSS"},
         ]
-        results = self.matcher.match_many(resume, jobs)
-        scores = [r.similarity_score for r in results]
-        assert scores == sorted(scores, reverse=True)
+        resultados = self.matcher.match_many("Python, FastAPI, Docker", vagas, top_n=2)
+        scores = [r.score_final for r in resultados]
+        assert len(resultados) == 2 and scores == sorted(scores, reverse=True)
 
-    def test_match_many_top_n(self):
-        resume = "Python, FastAPI, PostgreSQL"
-        jobs = [
-            {"id": str(i), "title": f"Vaga {i}", "description": f"Python job {i}"}
-            for i in range(5)
-        ]
-        results = self.matcher.match_many(resume, jobs, top_n=3)
-        assert len(results) <= 3
+    def test_nivel_de_compatibilidade(self):
+        resultado = self.matcher.match_one("Python Docker AWS", "Python Docker AWS")
+        assert resultado.nivel_compatibilidade() in ("Alto", "Médio", "Baixo")
 
-    def test_match_result_has_skills(self):
-        resume = "Python, Docker, AWS, PostgreSQL"
-        job = "Python, Kubernetes, AWS"
-        result = self.matcher.match_one(resume, job)
-        assert "python" in result.matching_skills
-        assert "aws" in result.matching_skills
-        assert "kubernetes" in result.missing_skills
 
-    def test_compatibility_level_labels(self):
-        resume = "Python FastAPI Docker AWS PostgreSQL scikit-learn tensorflow kubernetes"
-        job = "Python FastAPI Docker AWS PostgreSQL scikit-learn tensorflow kubernetes"
-        result = self.matcher.match_one(resume, job)
-        assert result._get_compatibility_level() in ("Alto", "Médio", "Baixo")
+def test_rest_so_em_maiusculas():
+    assert "rest" in extrator.extrair_lista("APIs REST e serviços RESTful")
+    assert "rest" not in extrator.extrair_lista("the rest of the team")

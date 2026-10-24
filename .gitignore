@@ -41,3 +41,6 @@ data/processado/
 # OS
 .DS_Store
 Thumbs.db
+# Modelos treinados e checkpoints (grandes demais para o GitHub, limite de 100 MB)
+models/
+checkpoints/

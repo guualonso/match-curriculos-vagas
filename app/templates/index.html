@@ -27,15 +27,13 @@
 
   <main class="main">
 
-    <!-- ANÁLISE -->
+    <!-- ── ANÁLISE ─────────────────────────────────────────── -->
     <section id="tab-match" class="tab-content active">
-
       <div class="page-hero">
         <h1>Análise de Compatibilidade</h1>
         <p>Envie um ou mais currículos e escolha as vagas para comparar.</p>
       </div>
 
-      <!-- Contador de vagas -->
       <div class="stats-bar">
         <div class="stat-pill">
           <span class="stat-pill-icon">📋</span>
@@ -47,7 +45,6 @@
         </div>
       </div>
 
-      <!-- Seletor de método -->
       <div class="metodo-selector">
         <button class="metodo-btn active" data-metodo="tfidf">
           <span class="metodo-icon">📊</span>
@@ -58,7 +55,6 @@
           <span class="metodo-icon">🧠</span>
           <span class="metodo-nome">SBERT</span>
           <span class="metodo-desc">Embeddings semânticos</span>
-          <span class="metodo-badge">Em breve</span>
         </button>
       </div>
 
@@ -76,10 +72,8 @@
             <p class="drop-hint">PDF, DOCX ou TXT · múltiplos arquivos aceitos</p>
           </div>
 
-          <!-- Lista de arquivos selecionados -->
           <div id="files-list" class="files-list hidden"></div>
 
-          <!-- Escopo das vagas -->
           <div class="form-group mt-16">
             <label for="vagas-escopo">Vagas para comparar</label>
             <select id="vagas-escopo">
@@ -95,7 +89,6 @@
             <span id="btn-analyze-spinner" class="spinner hidden"></span>
           </button>
 
-          <!-- Estimativa de tempo -->
           <div id="tempo-manual" class="tempo-info hidden"></div>
         </div>
 
@@ -131,19 +124,17 @@
           <span id="results-meta" class="results-meta"></span>
           <span id="results-metodo-badge" class="metodo-tag"></span>
         </div>
-        <!-- Tabs de currículo quando há múltiplos -->
         <div id="curriculos-tabs" class="curriculos-tabs hidden"></div>
         <div id="results-list" class="results-list"></div>
         <div id="pagination" class="pagination hidden"></div>
       </div>
-
     </section>
 
-    <!-- COMPARATIVO -->
+    <!-- ── COMPARATIVO ─────────────────────────────────────── -->
     <section id="tab-comparar" class="tab-content hidden">
       <div class="page-hero">
         <h1>Comparativo TF-IDF vs SBERT</h1>
-        <p>Analise o mesmo currículo com os dois métodos e compare os resultados lado a lado.</p>
+        <p>Envie um currículo e veja o ranking de vagas reordenar quando troca de método.</p>
       </div>
       <div class="card">
         <h2 class="card-title">📄 Currículo para comparação</h2>
@@ -160,35 +151,30 @@
           <button id="remove-file-cmp" class="btn-icon" title="Remover">✕</button>
         </div>
         <div class="form-group mt-16">
-          <label for="top-n-cmp">Número de vagas</label>
-          <input id="top-n-cmp" type="number" value="5" min="1" max="20" class="input-sm" />
+          <label for="top-n-cmp">Vagas por método (top-N exibido)</label>
+          <input id="top-n-cmp" type="number" value="10" min="1" max="30" class="input-sm" />
         </div>
         <button id="btn-comparar" class="btn btn-primary btn-full mt-16" disabled>
           <span id="btn-comparar-text">Comparar TF-IDF vs SBERT</span>
           <span id="btn-comparar-spinner" class="spinner hidden"></span>
         </button>
-        <div class="aviso-sbert mt-16">
-          🧠 <strong>SBERT (fase 2):</strong> O comparativo completo estará disponível após a implementação do modelo de embeddings semânticos. Por enquanto, o resultado SBERT é simulado para demonstração da interface.
-        </div>
       </div>
+
       <div id="comparativo-section" class="hidden mt-32">
-        <div class="comparativo-header">
-          <div class="comparativo-col-header tfidf-col">
-            <span class="metodo-icon-lg">📊</span>
-            <div>
-              <strong>TF-IDF + Cosseno</strong>
-              <p>Similaridade estatística por frequência de termos</p>
-            </div>
+
+        <div id="comparativo-banner"></div>
+
+        <div class="cmp-toolbar">
+          <span class="cmp-toolbar-label">Ordenar ranking por:</span>
+          <div class="cmp-toggle">
+            <button id="btn-ord-tfidf" class="cmp-toggle-btn active">📊 TF-IDF</button>
+            <button id="btn-ord-sbert" class="cmp-toggle-btn">🧠 SBERT</button>
           </div>
-          <div class="comparativo-col-header sbert-col">
-            <span class="metodo-icon-lg">🧠</span>
-            <div>
-              <strong>SBERT</strong>
-              <p>Embeddings semânticos — MiniLM-L12-v2</p>
-            </div>
-          </div>
+          <span id="cmp-subtitle" class="cmp-subtitle"></span>
         </div>
+
         <div id="comparativo-list" class="comparativo-list"></div>
+
         <div id="comparativo-stats" class="comparativo-stats hidden">
           <h3>Análise do comparativo</h3>
           <div class="stats-grid">
@@ -209,20 +195,18 @@
       </div>
     </section>
 
-    <!-- VAGAS -->
+    <!-- ── VAGAS ───────────────────────────────────────────── -->
     <section id="tab-jobs" class="tab-content hidden">
       <div class="page-hero">
         <h1>Gerenciar Vagas</h1>
         <p>Cadastre e visualize as vagas disponíveis para análise.</p>
       </div>
-
       <div class="stats-bar">
         <div class="stat-pill">
           <span class="stat-pill-icon">📋</span>
           <span id="total-vagas-jobs">Carregando…</span>
         </div>
       </div>
-
       <div class="two-col">
         <div class="card">
           <h2 class="card-title">➕ Nova Vaga</h2>
@@ -266,29 +250,40 @@
       </div>
     </section>
 
-    <!-- HISTÓRICO -->
+    <!-- ── HISTÓRICO ───────────────────────────────────────── -->
     <section id="tab-history" class="tab-content hidden">
       <div class="page-hero">
         <h1>Histórico de Análises</h1>
         <p>Consulte análises anteriores pelo ID do currículo.</p>
       </div>
-      <div class="card card-narrow">
-        <div class="form-row">
-          <input id="history-resume-id" type="number" placeholder="ID do currículo" min="1" />
-          <select id="history-metodo" style="width:130px;flex-shrink:0">
-            <option value="">Todos</option>
-            <option value="tfidf">TF-IDF</option>
-            <option value="sbert">SBERT</option>
-          </select>
+
+      <div class="card history-toolbar">
+        <div class="history-search">
+          <div class="form-group campo-id">
+            <label for="history-resume-id">ID do currículo</label>
+            <input id="history-resume-id" type="number" min="1"
+              placeholder="Exibido após cada análise" />
+          </div>
+          <div class="form-group campo-metodo">
+            <label for="history-metodo">Método</label>
+            <select id="history-metodo">
+              <option value="">Todos</option>
+              <option value="tfidf">TF-IDF</option>
+              <option value="sbert">SBERT</option>
+            </select>
+          </div>
           <button id="btn-load-history" class="btn btn-primary">Buscar</button>
         </div>
-        <div id="history-list" class="history-list mt-16"></div>
       </div>
+
+      <div id="history-list" class="history-list"></div>
     </section>
 
   </main>
 
   <div id="toast" class="toast hidden"></div>
-  <script src="/static/js/app.js"></script>
+
+  <!-- ES6 modules: cada módulo gerencia seu próprio escopo -->
+  <script type="module" src="/static/js/app.js"></script>
 </body>
 </html>

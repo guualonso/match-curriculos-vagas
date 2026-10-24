@@ -67,6 +67,7 @@ class QuickMatchRequest(BaseModel):
     resume_text: str = Field(..., min_length=10)
     job_description: str = Field(..., min_length=10)
     job_title: Optional[str] = "Vaga"
+    metodo: Optional[str] = "tfidf"
 
 
 class QuickMatchResponse(BaseModel):
@@ -83,6 +84,9 @@ class MatchHistoryResponse(BaseModel):
     matching_skills: List[str]
     missing_skills: List[str]
     extra_skills: List[str]
+    metodo: str = "tfidf"
+    score_tfidf: float = 0.0
+    score_skills: float = 0.0
     created_at: datetime
 
     model_config = {"from_attributes": True}

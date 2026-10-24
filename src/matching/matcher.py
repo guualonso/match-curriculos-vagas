@@ -216,7 +216,7 @@ class MatcherCurriculoVaga:
         resultados.sort(key=lambda r: r.score_final, reverse=True)
         return resultados[:top_n] if top_n else resultados
 
-    # Aliases para compatibilidade com routes.py
+    # Aliases para compatibilidade com os routers
     def match_one(self, resume_text, job_text, job_id="job_1", job_title="Vaga"):
         return self.comparar_um(resume_text, job_text, job_id, job_title)
 

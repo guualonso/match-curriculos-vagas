@@ -41,7 +41,13 @@ resume-job-matcher/
 │
 ├── app/
 │   ├── main.py            # FastAPI — entrypoint
-│   ├── routes.py          # endpoints da API
+│   ├── routers/           # endpoints da API, um arquivo por domínio
+│   │   ├── vagas.py       #   /jobs
+│   │   ├── curriculos.py  #   /resumes
+│   │   ├── matching.py    #   /match/*
+│   │   └── historico.py   #   /history/*
+│   ├── services/
+│   │   └── matching_service.py  # upload, persistência e escolha do motor
 │   ├── database.py        # SQLAlchemy — modelos e sessão
 │   └── schemas.py         # Pydantic — schemas de entrada/saída
 │
@@ -80,11 +86,9 @@ source .venv/bin/activate      # Linux/macOS
 # 3. Instale as dependências
 pip install -r requirements.txt
 
-# 4. Baixe o modelo spaCy (português)
+# 4. Baixe os modelos spaCy (o pré-processamento escolhe o modelo pelo idioma do texto)
 python -m spacy download pt_core_news_sm
-
-# Se preferir inglês:
-# python -m spacy download en_core_web_sm
+python -m spacy download en_core_web_sm
 
 # 5. Configure as variáveis de ambiente
 cp .env.example .env
@@ -92,6 +96,34 @@ cp .env.example .env
 ```
 
 ---
+
+## Base de habilidades (ESCO)
+
+A extração usa a coleção de habilidades digitais da ESCO v1.2.1 (1.284 conceitos),
+adaptada para o português brasileiro, mais um complemento de ferramentas que a ESCO
+não cobre (`src/extraction/complemento_skills.py`).
+
+- `data/esco/digitalSkillsCollection_ptbr.csv` — versão adaptada (obrigatória, já no repositório)
+- `data/esco/digitalSkillsCollection_en.csv` — rótulos em inglês (recomendada, porque os
+  datasets estão em inglês). Baixe em https://esco.ec.europa.eu/en/use-esco/download
+  (ESCO dataset v1.2.1, idioma English, formato CSV) e copie o arquivo
+  `digitalSkillsCollection_en.csv` para `data/esco/`.
+
+Para conferir: `python -m src.extraction.skills_extractor`
+
+## Reproduzindo o pipeline
+
+```bash
+python importar_dataset.py --limite 3000   # currículos -> curriculos_processados.json
+python preparar_vagas.py                   # vagas -> vagas_processadas.json
+python preparar_pares.py                   # split por currículo (seed 42) + pares positivos
+python finetune_sbert.py --epocas 3 --batch 64 --seq 256 --fp16
+python preparar_amostra_dificil.py         # amostra dirigida para anotação
+python avaliar_comparativo.py              # métricas sobre o gabarito anotado
+```
+
+`amostra_anotacao.py` gera a amostra de 170 pares do gabarito. Não rode de novo depois
+de anotada: ela sortearia pares diferentes.
 
 ## Banco de dados
 

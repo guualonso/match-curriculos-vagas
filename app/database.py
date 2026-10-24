@@ -92,6 +92,10 @@ class MatchHistory(Base):
     missing_skills = Column(JSON)     
     extra_skills = Column(JSON)      
 
+    metodo = Column(String(10), default="tfidf")  
+    score_tfidf = Column(Float, default=0.0)
+    score_skills = Column(Float, default=0.0)
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
     resume = relationship("Resume", back_populates="matches")

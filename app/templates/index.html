@@ -162,16 +162,38 @@
 
       <div id="comparativo-section" class="hidden mt-32">
 
-        <div id="comparativo-banner"></div>
+        <div class="card cmp-explicacao">
+          <h3>Como funciona a comparação</h3>
+          <ol>
+            <li>O currículo enviado é comparado com <strong>cada uma das <span id="cmp-total-vagas">—</span> vagas cadastradas</strong>, pelos dois métodos.</li>
+            <li>Cada método dá um score a cada vaga e as ordena do maior para o menor score: esse é o <strong>ranking</strong> do método. A 1ª posição é a vaga que o método considera mais compatível com o currículo.</li>
+            <li>Os scores dos dois métodos estão em escalas diferentes, por isso a comparação é feita pelas <strong>posições</strong> nos rankings, e não pelos valores.</li>
+          </ol>
+        </div>
+
+        <figure class="card cmp-grafico">
+          <figcaption>
+            <strong>Mudança de posição entre os rankings</strong>
+            <span>À esquerda estão as vagas mais bem posicionadas pelo <b class="texto-tfidf">TF-IDF</b>; à direita, pelo <b class="texto-sbert">SBERT</b>.
+              Cada linha liga a mesma vaga nos dois rankings:
+              <span class="legenda subiu">verde</span>, o SBERT a colocou mais acima;
+              <span class="legenda caiu">vermelho</span>, mais abaixo;
+              <span class="legenda igual">cinza</span>, na mesma posição.
+              Uma linha que termina em "fora do top" é uma vaga que um método colocou entre as melhores e o outro não.
+              Clique em uma linha para ver a vaga na lista.</span>
+          </figcaption>
+          <div id="grafico-inclinacao"></div>
+        </figure>
 
         <div class="cmp-toolbar">
-          <span class="cmp-toolbar-label">Ordenar ranking por:</span>
+          <span class="cmp-toolbar-label">Ordenar a lista por:</span>
           <div class="cmp-toggle">
             <button id="btn-ord-tfidf" class="cmp-toggle-btn active">📊 TF-IDF</button>
             <button id="btn-ord-sbert" class="cmp-toggle-btn">🧠 SBERT</button>
           </div>
           <span id="cmp-subtitle" class="cmp-subtitle"></span>
         </div>
+        <p class="cmp-dica">Clique em uma vaga para ver as habilidades em comum, ausentes e extras.</p>
 
         <div id="comparativo-list" class="comparativo-list"></div>
 
@@ -179,16 +201,24 @@
           <h3>Análise do comparativo</h3>
           <div class="stats-grid">
             <div class="stat-card">
-              <span class="stat-label">Correlação entre métodos</span>
+              <span class="stat-label">Correlação de Spearman (todas as vagas)</span>
               <span id="stat-correlacao" class="stat-valor"></span>
+              <span id="stat-correlacao-leitura" class="stat-leitura"></span>
+              <p class="stat-explicacao">Mede se os dois métodos ordenam <strong>todas</strong> as vagas de forma parecida.
+                Vai de −1 a 1: perto de 1, as duas ordens quase coincidem; perto de 0, não têm relação;
+                negativo, uma ordem é o inverso da outra.</p>
             </div>
             <div class="stat-card">
-              <span class="stat-label">Maior diferença de score</span>
+              <span class="stat-label">Maior mudança de posição</span>
               <span id="stat-maior-diff" class="stat-valor"></span>
+              <span id="stat-maior-diff-leitura" class="stat-leitura"></span>
+              <p class="stat-explicacao">Entre as vagas exibidas, quantas posições subiu ou desceu a vaga que mais mudou de um ranking para o outro.</p>
             </div>
             <div class="stat-card">
-              <span class="stat-label">Concordância no top-3</span>
+              <span class="stat-label">Concordância no top 3</span>
               <span id="stat-concordancia" class="stat-valor"></span>
+              <span id="stat-concordancia-leitura" class="stat-leitura"></span>
+              <p class="stat-explicacao">Quantas das 3 vagas mais compatíveis segundo o TF-IDF também estão entre as 3 primeiras do SBERT.</p>
             </div>
           </div>
         </div>

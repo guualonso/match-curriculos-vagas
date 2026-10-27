@@ -21,6 +21,7 @@ Métricas:
   - Wilcoxon pareado sobre o NDCG por currículo (significância da diferença).
 """
 
+import argparse
 import os
 import sys
 import numpy as np
@@ -43,10 +44,13 @@ GABARITO = os.path.join(DIR, "gabarito_final.xlsx")
 SAIDA    = os.path.join(DIR, "resultados_por_par.csv")
 
 
-def carregar():
-    amo = pd.read_excel(AMOSTRA).reset_index(drop=True)
-    gab = pd.read_excel(GABARITO).sort_values("Par").reset_index(drop=True)
+def carregar(caminho_amostra, caminho_gabarito):
+    amo = pd.read_excel(caminho_amostra).reset_index(drop=True)
+    gab = pd.read_excel(caminho_gabarito).sort_values("Par").reset_index(drop=True)
     assert len(amo) == len(gab), "amostra e gabarito têm tamanhos diferentes"
+    pendentes = gab.loc[gab["Compativel"].isna(), "Par"].tolist()
+    if pendentes:
+        sys.exit(f"Gabarito incompleto: preencha a coluna Compativel dos pares {pendentes}.")
     df = pd.DataFrame({
         "id_par": amo["id_par"],
         "id_curriculo": amo["id_par"].astype(str).str.split("__").str[0],
@@ -57,10 +61,15 @@ def carregar():
     return df
 
 
-def escorar(df):
-    """Roda os dois matchers por par e devolve os escores."""
+def escorar(df, sbert_base=False):
+    """Roda os dois matchers por par e devolve os escores.
+
+    Com sbert_base=True, usa o modelo SBERT original, sem ajuste fino (comparação
+    para medir o efeito do fine-tuning)."""
     from src.matching.matcher import matcher as matcher_tfidf
-    from src.matching.semantic_matcher import matcher_semantico
+    from src.matching.semantic_matcher import MatcherSemantico, matcher_semantico
+    if sbert_base:
+        matcher_semantico = MatcherSemantico(usar_ajustado=False)
 
     s_tfidf, s_sbert = [], []
     for _, r in df.iterrows():
@@ -123,25 +132,49 @@ def bootstrap_diff_auc(y, s_a, s_b, n=5000, seed=0):
     return obs, lo, hi, p
 
 
+def combinar_por_posicao(*colunas_de_score):
+    """Média das posições percentuais de cada par nos rankings (combinação sem parâmetros)."""
+    return sum(pd.Series(c).rank(pct=True).values for c in colunas_de_score) / len(colunas_de_score)
+
+
 def main():
-    df = carregar()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--amostra", default=AMOSTRA, help="Planilha com id_par, texto_curriculo e texto_vaga.")
+    parser.add_argument("--gabarito", default=GABARITO, help="Planilha com as colunas Par e Compativel.")
+    parser.add_argument("--saida", default=SAIDA, help="CSV com o score de cada par.")
+    parser.add_argument("--sbert-base", action="store_true",
+                        help="Usa o SBERT original, sem ajuste fino, para medir o efeito do fine-tuning.")
+    args = parser.parse_args()
+
+    df = carregar(args.amostra, args.gabarito)
     n = len(df); pos = int(df["label"].sum())
     print(f"Pares: {n} | compatíveis: {pos} ({pos/n:.1%}) | incompatíveis: {n-pos}")
     print(f"Currículos distintos: {df['id_curriculo'].nunique()}")
 
-    df = escorar(df)
-    df.to_csv(SAIDA, index=False, encoding="utf-8")
-    print(f"\nEscores salvos em {SAIDA}")
+    df = escorar(df, sbert_base=args.sbert_base)
+    if args.sbert_base:
+        print("SBERT: modelo original, SEM ajuste fino")
+    df["score_combinado"] = combinar_por_posicao(df["score_tfidf"], df["score_sbert"])
+    df.to_csv(args.saida, index=False, encoding="utf-8")
+    print(f"\nEscores salvos em {args.saida}")
 
     y = df["label"].values
     metricas("TF-IDF (score final do sistema)", y, df["score_tfidf"].values)
-    metricas("Sentence-BERT (ajustado)",        y, df["score_sbert"].values)
+    metricas("Sentence-BERT (" + ("sem ajuste fino" if args.sbert_base else "ajustado") + ")", y, df["score_sbert"].values)
+    metricas("Combinação (média das posições, exploratória)", y, df["score_combinado"].values)
 
     # significância da diferença de desempenho (bootstrap pareado da AUC)
     obs, lo, hi, p = bootstrap_diff_auc(y, df["score_tfidf"].values, df["score_sbert"].values)
     print(f"\n### Diferença de AUC (SBERT - TF-IDF), bootstrap pareado")
     print(f"  Diferença: {obs:+.3f}  IC95% [{lo:+.3f}, {hi:+.3f}]  p={p:.4f}  "
           f"({'significativa' if p < 0.05 else 'não significativa'} a 5%)")
+
+    obs, lo, hi, p = bootstrap_diff_auc(y, df["score_tfidf"].values, df["score_combinado"].values)
+    print(f"\n### Diferença de AUC (combinação - TF-IDF), bootstrap pareado")
+    print(f"  Diferença: {obs:+.3f}  IC95% [{lo:+.3f}, {hi:+.3f}]  p={p:.4f}")
+    obs, lo, hi, p = bootstrap_diff_auc(y, df["score_sbert"].values, df["score_combinado"].values)
+    print(f"### Diferença de AUC (combinação - SBERT), bootstrap pareado")
+    print(f"  Diferença: {obs:+.3f}  IC95% [{lo:+.3f}, {hi:+.3f}]  p={p:.4f}")
 
     # correlação entre os dois métodos
     rho, pval = spearmanr(df["score_tfidf"], df["score_sbert"])

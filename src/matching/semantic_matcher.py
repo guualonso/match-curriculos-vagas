@@ -24,6 +24,8 @@ import os
 from functools import lru_cache
 from typing import Dict, List, Optional
 
+import numpy as np
+
 from src.extraction.skills_extractor import extrator as extrator_skills
 from src.matching.matcher import ResultadoMatch
 
@@ -32,6 +34,31 @@ MODELO_BASE = "paraphrase-multilingual-MiniLM-L12-v2"
 
 # Diretório onde o script de fine-tuning salva o modelo especializado em TI.
 CAMINHO_MODELO_AJUSTADO = os.path.join("models", "sbert_finetuned")
+
+# O modelo lê no máximo 256 tokens por texto e descarta o restante. Isso é o padrão,
+# coerente com o ajuste fino (também feito com 256 tokens): no início da vaga ficam o
+# título e o resumo do cargo. Com usar_janelas=True, o texto é dividido em janelas
+# de palavras que cabem no limite (150 palavras ficam abaixo de 256 tokens), com
+# sobreposição, e o embedding é a média das janelas. Na avaliação, essa leitura do
+# texto completo reduziu a AUC-ROC (0,748 -> 0,672): a média mistura o conteúdo
+# genérico do fim das vagas (benefícios, história da empresa), comum a todas elas.
+PALAVRAS_POR_JANELA = 150
+SOBREPOSICAO_PALAVRAS = 30
+
+
+def dividir_em_janelas(texto: str, tamanho: int = PALAVRAS_POR_JANELA,
+                       sobreposicao: int = SOBREPOSICAO_PALAVRAS) -> List[str]:
+    """Divide o texto em janelas de até `tamanho` palavras, com `sobreposicao` palavras em comum."""
+    palavras = texto.split()
+    if len(palavras) <= tamanho:
+        return [texto]
+    passo = tamanho - sobreposicao
+    janelas = []
+    for inicio in range(0, len(palavras), passo):
+        janelas.append(" ".join(palavras[inicio:inicio + tamanho]))
+        if inicio + tamanho >= len(palavras):
+            break
+    return janelas
 
 
 @lru_cache(maxsize=2)
@@ -56,9 +83,12 @@ def _resolver_modelo(preferir_ajustado: bool = True) -> str:
 class MatcherSemantico:
     """Matcher de compatibilidade currículo × vaga baseado em SBERT."""
 
-    def __init__(self, modelo: Optional[str] = None, usar_ajustado: bool = True):
+    def __init__(self, modelo: Optional[str] = None, usar_ajustado: bool = True,
+                 usar_janelas: bool = False):
         # Nome do modelo base ou caminho do modelo ajustado.
         self.nome_modelo = modelo or _resolver_modelo(usar_ajustado)
+        self.usar_janelas = usar_janelas
+        self._cache_embeddings: Dict[str, np.ndarray] = {}  # texto -> embedding (modo padrão)
         self._modelo = None  # carregado sob demanda
 
     @property
@@ -75,13 +105,43 @@ class MatcherSemantico:
         return " ".join((texto or "").split())
 
     def _embeddings(self, textos: List[str]):
-        """Gera embeddings L2-normalizados (produto escalar = cosseno)."""
-        return self.modelo.encode(
-            textos,
+        """Gera um embedding L2-normalizado por texto (produto escalar = cosseno).
+
+        Padrão: o modelo lê os primeiros 256 tokens de cada texto. Com usar_janelas,
+        cada texto é dividido em janelas (ver dividir_em_janelas) e o embedding do
+        texto é a média dos embeddings das janelas, normalizada de novo.
+        """
+        if not self.usar_janelas:
+            # Cada texto é codificado uma única vez; as vagas ficam em cache entre as buscas.
+            faltando = [t for t in dict.fromkeys(textos) if t not in self._cache_embeddings]
+            if faltando:
+                novos = self.modelo.encode(
+                    faltando,
+                    convert_to_numpy=True,
+                    normalize_embeddings=True,
+                    show_progress_bar=False,
+                )
+                self._cache_embeddings.update(zip(faltando, novos))
+            return np.stack([self._cache_embeddings[t] for t in textos])
+
+        janelas, dono = [], []
+        for indice, texto in enumerate(textos):
+            for janela in dividir_em_janelas(texto):
+                janelas.append(janela)
+                dono.append(indice)
+
+        emb_janelas = self.modelo.encode(
+            janelas,
             convert_to_numpy=True,
             normalize_embeddings=True,
             show_progress_bar=False,
         )
+
+        dono = np.asarray(dono)
+        emb = np.zeros((len(textos), emb_janelas.shape[1]), dtype=emb_janelas.dtype)
+        np.add.at(emb, dono, emb_janelas)
+        emb /= np.linalg.norm(emb, axis=1, keepdims=True)
+        return emb
 
     @staticmethod
     def _score(emb_a, emb_b) -> float:

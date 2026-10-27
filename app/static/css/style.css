@@ -320,14 +320,17 @@ textarea:focus { border-color: var(--primary); }
   margin-top: 24px; background: var(--surface);
   border: 1px solid var(--border); border-radius: var(--radius); padding: 20px;
 }
-.comparativo-stats h3 { font-size: 1rem; margin-bottom: 16px; }
+.comparativo-stats h3 { font-size: 1.15rem; margin-bottom: 16px; }
 .stats-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; }
 @media (max-width: 640px) { .stats-grid { grid-template-columns: 1fr; } }
 .stat-card {
-  background: var(--surface2); border-radius: 10px; padding: 14px; text-align: center;
+  background: var(--surface2); border-radius: 10px; padding: 18px; text-align: center;
+  display: flex; flex-direction: column; gap: 6px;
 }
-.stat-label { display: block; font-size: .78rem; color: var(--text-muted); margin-bottom: 8px; }
-.stat-valor { display: block; font-size: 1.4rem; font-weight: 700; color: var(--primary); }
+.stat-label { display: block; font-size: .95rem; font-weight: 600; color: var(--text); }
+.stat-valor { display: block; font-size: 1.9rem; font-weight: 700; color: var(--primary); }
+.stat-leitura { font-size: .92rem; font-weight: 600; color: var(--text); }
+.stat-explicacao { font-size: .88rem; color: var(--text-muted); line-height: 1.55; margin-top: 4px; }
 
 .jobs-list {
   display: flex; flex-direction: column; gap: 10px;
@@ -416,31 +419,79 @@ textarea:focus { border-color: var(--primary); }
 
 /* Comparativo interativo */
 .cmp-toolbar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:14px; }
-.cmp-toolbar-label { font-size:.85rem; color:var(--text-muted); }
+.cmp-toolbar-label { font-size:.98rem; color:var(--text-muted); }
 .cmp-toggle { display:inline-flex; background:var(--surface2); border:1px solid var(--border); border-radius:999px; padding:3px; }
-.cmp-toggle-btn { border:none; background:none; color:var(--text-muted); font-size:.85rem; font-weight:600;
-  padding:6px 16px; border-radius:999px; cursor:pointer; transition:all .2s; }
+.cmp-toggle-btn { border:none; background:none; color:var(--text-muted); font-size:.95rem; font-weight:600;
+  padding:8px 18px; border-radius:999px; cursor:pointer; transition:all .2s; }
 .cmp-toggle-btn.active { background:var(--primary); color:#fff; }
-.cmp-subtitle { font-size:.78rem; color:var(--text-muted); margin-left:auto; }
+.cmp-subtitle { font-size:.9rem; color:var(--text-muted); margin-left:auto; }
 
 .comparativo-list { position:relative; display:flex; flex-direction:column; gap:12px; }
 .cmp-card { display:flex; gap:16px; align-items:center; background:var(--surface);
   border:1px solid var(--border); border-radius:var(--radius); padding:16px; will-change:transform; }
-.cmp-pos { font-size:1.4rem; font-weight:800; color:var(--text-muted); min-width:48px; text-align:center; }
+.cmp-pos { font-size:1.6rem; font-weight:800; color:var(--text-muted); min-width:48px; text-align:center; }
 .cmp-body { flex:1; min-width:0; }
-.cmp-title { font-size:.95rem; font-weight:600; margin-bottom:8px; }
+.cmp-title { font-size:1.08rem; font-weight:600; margin-bottom:10px; }
 .cmp-bars { display:flex; flex-direction:column; gap:6px; }
 .cmp-bar-row { display:flex; align-items:center; gap:10px; }
-.cmp-tag { font-size:.7rem; font-weight:700; width:54px; flex-shrink:0; }
+.cmp-tag { font-size:.82rem; font-weight:700; width:62px; flex-shrink:0; }
 .cmp-tag.tfidf { color:var(--primary); }
 .cmp-tag.sbert { color:var(--secondary); }
-.cmp-track { flex:1; height:8px; background:var(--surface2); border-radius:4px; overflow:hidden; }
+.cmp-track { flex:1; height:10px; background:var(--surface2); border-radius:4px; overflow:hidden; }
 .cmp-fill { height:100%; border-radius:4px; transition:width .6s ease; }
 .cmp-fill.tfidf { background:var(--primary); }
 .cmp-fill.sbert { background:var(--secondary); }
-.cmp-val { font-size:.8rem; font-weight:700; width:42px; text-align:right; flex-shrink:0; }
-.cmp-move { font-size:.76rem; color:var(--text-muted); margin-top:8px; }
+.cmp-val { font-size:.92rem; font-weight:700; width:48px; text-align:right; flex-shrink:0; }
+.cmp-move { font-size:.9rem; color:var(--text-muted); margin-top:10px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 .cmp-skills { margin-top:8px; }
+
+/* Explicação, gráfico e detalhes do comparativo */
+.cmp-explicacao { margin-bottom:16px; }
+.cmp-explicacao h3 { font-size:1.1rem; margin-bottom:10px; }
+.cmp-explicacao ol { padding-left:22px; display:flex; flex-direction:column; gap:6px; }
+.cmp-explicacao li { font-size:.98rem; line-height:1.6; color:var(--text-muted); }
+.cmp-explicacao strong { color:var(--text); }
+.cmp-grafico { margin:0 0 20px; padding:22px; }
+.cmp-grafico figcaption { display:flex; flex-direction:column; gap:6px; margin-bottom:14px; }
+.cmp-grafico figcaption strong { font-size:1.1rem; }
+.cmp-grafico figcaption > span { font-size:.95rem; color:var(--text-muted); line-height:1.6; }
+.texto-tfidf { color:var(--primary); }
+.texto-sbert { color:var(--secondary); }
+.legenda { font-weight:700; }
+.legenda.subiu { color:var(--secondary); }
+.legenda.caiu  { color:var(--danger); }
+.legenda.igual { color:var(--text); }
+.grafico { width:100%; height:auto; display:block; }
+.grafico .eixo { stroke:var(--border); stroke-width:1.5; }
+.grafico .rotulo { fill:var(--text); font-size:15px; }
+.grafico .rotulo.fora { fill:var(--text-muted); font-style:italic; }
+.grafico .cabecalho { font-size:17px; font-weight:700; }
+.grafico .cabecalho.tfidf { fill:var(--primary); }
+.grafico .cabecalho.sbert { fill:var(--secondary); }
+.grafico .inclinacao { cursor:pointer; outline:none; }
+.grafico .inclinacao line { stroke-width:2.5; stroke-opacity:.75; }
+.grafico .inclinacao line.alvo { stroke:transparent !important; stroke-width:14; pointer-events:stroke; }
+.grafico .inclinacao.subiu line, .grafico .inclinacao.subiu circle { stroke:var(--secondary); fill:var(--secondary); }
+.grafico .inclinacao.caiu line,  .grafico .inclinacao.caiu circle  { stroke:var(--danger); fill:var(--danger); }
+.grafico .inclinacao.igual line, .grafico .inclinacao.igual circle { stroke:var(--text-muted); fill:var(--text-muted); }
+.grafico .inclinacao:hover line, .grafico .inclinacao:focus line { stroke-width:5; stroke-opacity:1; }
+.grafico:has(.inclinacao:hover) .inclinacao:not(:hover) { opacity:.25; }
+.cmp-dica { font-size:.92rem; color:var(--text-muted); margin:-4px 0 12px; }
+.cmp-card { cursor:pointer; transition:border-color .2s, box-shadow .2s; }
+.cmp-card:hover, .cmp-card:focus-visible { border-color:var(--primary); outline:none; }
+.cmp-card.destacado { box-shadow:0 0 0 3px rgba(99,102,241,.45); }
+.cmp-abrir { margin-left:auto; color:var(--primary); font-weight:600; font-size:.88rem; }
+.cmp-card.aberto .cmp-abrir { visibility:hidden; }
+.cmp-detalhe { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:18px;
+  margin-top:14px; padding-top:14px; border-top:1px solid var(--border); cursor:default; }
+.cmp-detalhe[hidden] { display:none; }
+.cmp-detalhe .skills-group h4 { font-size:.85rem; }
+.cmp-detalhe .tag { font-size:.85rem; padding:3px 9px; }
+@media (max-width:760px) {
+  .cmp-detalhe { grid-template-columns:1fr; }
+  #grafico-inclinacao { overflow-x:auto; }
+  #grafico-inclinacao .grafico { min-width:760px; }   /* rolagem horizontal em vez de texto ilegível */
+}
 
 /* pulso ao reordenar */
 .cmp-card.subiu { border-color:var(--secondary); box-shadow:0 0 0 2px rgba(16,185,129,.25); }

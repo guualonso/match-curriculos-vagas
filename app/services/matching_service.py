@@ -74,8 +74,18 @@ def salvar_curriculo(database: Session, dados_upload: dict) -> Resume:
 
 
 def montar_payload_vagas(vagas: list[Job]) -> list[dict]:
+    """Inclui o texto limpo e as habilidades calculados no cadastro, para não reprocessar as vagas."""
     return [
-        {"id": str(vaga.id), "title": vaga.title, "description": vaga.description}
+        {
+            "id": str(vaga.id),
+            "title": vaga.title,
+            "description": vaga.description,
+            "texto_limpo": vaga.cleaned_text,
+            "skills": (
+                [skill for skills in vaga.extracted_skills.values() for skill in skills]
+                if vaga.extracted_skills is not None else None
+            ),
+        }
         for vaga in vagas
     ]
 

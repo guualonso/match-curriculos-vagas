@@ -20,6 +20,7 @@ import csv
 import os
 import re
 import unicodedata
+from functools import lru_cache
 from typing import Dict, List, Set
 
 from src.extraction.complemento_skills import ALIASES, BASE_SKILLS
@@ -30,18 +31,20 @@ ARQUIVO_ESCO_EN = os.path.join(PASTA_ESCO, "digitalSkillsCollection_en.csv")
 
 # Rótulos que, em textos reais, coincidem com palavras comuns e geram falsos positivos
 # (medido na amostra de vagas e currículos: "less" casava com 57% dos documentos).
-# "ml" na ESCO é a linguagem ML, não machine learning. Do complemento, saem pelo mesmo
-# motivo "go", "solid" ("solid experience") e "rest" ("the rest of").
+# "ml" na ESCO é a linguagem ML, não machine learning. Dos rótulos em inglês saem "it"
+# (pronome), "email", "call" e "bi" ("bi-weekly"); do complemento, "go", "solid" ("solid experience") e "rest".
 ROTULOS_IGNORADOS: Set[str] = {
     "less", "source", "ml", "scratch", "chef", "salt", "unity",
-    "eclipse", "ide", "pms", "go", "solid", "rest",
+    "eclipse", "ide", "pms", "go", "solid", "rest", "it", "email", "call", "bi",
 }
 
-# Termos que só contam escritos em maiúsculas: "R" isolado (não "R&D") e "REST"/"RESTful"
-# (a palavra "rest" em minúsculas fica ignorada).
+# Termos que só contam escritos em maiúsculas: "R" isolado (não "R&D"), "REST"/"RESTful"
+# "IT" e "BI" (em minúsculas, "it" é pronome e "bi" aparece em "bi-weekly").
 PADROES_SO_MAIUSCULA = {
     "R": re.compile(r"(?<![\w+#.&])R(?![\w+#&])"),
     "rest": re.compile(r"\bREST(?:ful)?\b"),
+    "tecnologia informática": re.compile(r"\bIT\b"),
+    "inteligência empresarial": re.compile(r"\bBI\b"),
 }
 
 CATEGORIA_POR_TIPO = {"knowledge": "conhecimento", "skill/competence": "habilidade"}
@@ -70,6 +73,12 @@ def forma_canonica_complemento(texto: str) -> str:
     return re.sub(r"[\s.\-]", "", texto)
 
 
+def formas_canonicas(chave: str) -> Set[str]:
+    """Formas comparáveis com os termos do complemento, com e sem os aliases da lista
+    ("angular" vira "angularjs" pelo alias, mas é o mesmo conceito)."""
+    return {forma_canonica_complemento(chave), re.sub(r"[\s.\-]", "", chave)}
+
+
 def ler_rotulos(caminho: str) -> List[dict]:
     with open(caminho, encoding="utf-8", newline="") as arquivo:
         return list(csv.DictReader(arquivo))
@@ -85,42 +94,52 @@ class ExtratorSkills:
         conceitos = {linha["conceptUri"]: linha for linha in ler_rotulos(arquivo_ptbr)}
         self.total_conceitos_esco = len(conceitos)
 
-        rotulos_por_conceito: Dict[str, List[str]] = {uri: [] for uri in conceitos}
+        # Prioridade dos rótulos: 1) preferenciais ESCO, 2) termos do complemento, 3) alternativos ESCO.
+        # Assim um rótulo alternativo de um conceito amplo não "rouba" um termo específico
+        # (na ESCO, "TensorFlow" é rótulo alternativo de "visão por computador").
+        preferidos: Dict[str, List[str]] = {uri: [] for uri in conceitos}
+        alternativos: Dict[str, List[str]] = {uri: [] for uri in conceitos}
         fontes = [ler_rotulos(arquivo_ptbr)]
         if self.usa_rotulos_ingles:
             fontes.append(ler_rotulos(arquivo_en))
         for linhas in fontes:
             for linha in linhas:
                 uri = linha["conceptUri"]
-                if uri not in rotulos_por_conceito:
+                if uri not in conceitos:
                     continue
-                rotulos_por_conceito[uri].append(linha["preferredLabel"])
+                preferidos[uri].append(linha["preferredLabel"])
                 # o CSV original separa os rótulos alternativos por quebra de linha; o adaptado, por " | "
-                alternativos = re.split(r"\n|\s*\|\s*", linha.get("altLabels") or "")
-                rotulos_por_conceito[uri].extend(r for r in alternativos if r.strip())
+                alternativos[uri].extend(r for r in re.split(r"\n|\s*\|\s*", linha.get("altLabels") or "") if r.strip())
 
-        for uri, linha in conceitos.items():
-            nome = nome_exibicao(linha["preferredLabel"])
-            self.categoria[nome] = CATEGORIA_POR_TIPO.get(linha["skillType"], "habilidade")
-            for rotulo in rotulos_por_conceito[uri]:
-                chave = chave_rotulo(rotulo)
-                if len(chave) >= 2 and chave not in ROTULOS_IGNORADOS:
-                    self.rotulo_para_nome.setdefault(chave, nome)
+        def adicionar(rotulos_do_conceito: Dict[str, List[str]], bloqueadas: Set[str]) -> None:
+            for uri, rotulos in rotulos_do_conceito.items():
+                nome = nome_exibicao(conceitos[uri]["preferredLabel"])
+                self.categoria.setdefault(nome, CATEGORIA_POR_TIPO.get(conceitos[uri]["skillType"], "habilidade"))
+                for rotulo in rotulos:
+                    chave = chave_rotulo(rotulo)
+                    if len(chave) < 2 or chave in ROTULOS_IGNORADOS or chave in self.rotulo_para_nome:
+                        continue
+                    if formas_canonicas(chave) & bloqueadas:
+                        continue
+                    self.rotulo_para_nome[chave] = nome
 
-        # Complemento: termos da lista curada que nenhum rótulo ESCO cobre.
-        # compara com e sem os aliases da lista ("angular" vira "angularjs" pelo alias, mas é o mesmo conceito)
-        canonicas_esco = {}
-        for chave, nome in self.rotulo_para_nome.items():
-            canonicas_esco[forma_canonica_complemento(chave)] = nome
-            canonicas_esco[re.sub(r"[\s.\-]", "", chave)] = nome
-        canonicas_esco["r"] = "R"
+        # 1) rótulos preferenciais
+        adicionar(preferidos, bloqueadas=set())
+
+        # 2) complemento: termos da lista curada que nenhum rótulo preferencial cobre
+        canonicas_preferidas = {forma for chave in self.rotulo_para_nome for forma in formas_canonicas(chave)}
+        canonicas_preferidas.add("r")
         self.complemento: Dict[str, List[str]] = {}
         for categoria, termos in BASE_SKILLS.items():
             for termo in termos:
-                if termo in ROTULOS_IGNORADOS or termo in canonicas_esco:
+                if termo in ROTULOS_IGNORADOS or termo in canonicas_preferidas:
                     continue
                 self.complemento.setdefault(categoria, []).append(termo)
                 self.categoria[termo] = categoria
+
+        # 3) rótulos alternativos, exceto os que coincidem com um termo do complemento
+        termos_complemento = {termo for termos in self.complemento.values() for termo in termos}
+        adicionar(alternativos, bloqueadas=termos_complemento)
         self.categoria["rest"] = "metodologias"  # detectado só em maiúsculas (PADROES_SO_MAIUSCULA)
         self.total_complemento = sum(len(termos) for termos in self.complemento.values())
 
@@ -134,7 +153,15 @@ class ExtratorSkills:
         return texto
 
     def extrair(self, texto: str) -> Dict[str, List[str]]:
-        """Habilidades agrupadas por categoria (usado pela interface)."""
+        """Habilidades agrupadas por categoria (usado pela interface).
+
+        O resultado de cada texto fica em cache: a mesma vaga ou o mesmo currículo
+        não é reprocessado em comparações seguidas.
+        """
+        return {categoria: list(nomes) for categoria, nomes in self._extrair_com_cache(texto or "").items()}
+
+    @lru_cache(maxsize=50_000)
+    def _extrair_com_cache(self, texto: str) -> Dict[str, List[str]]:
         if not texto:
             return {}
         encontradas: Set[str] = {self.rotulo_para_nome[chave] for chave in self.padrao_esco.findall(sem_acento(texto.lower()))}

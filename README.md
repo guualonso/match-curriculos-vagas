@@ -105,9 +105,7 @@ não cobre (`src/extraction/complemento_skills.py`).
 
 - `data/esco/digitalSkillsCollection_ptbr.csv` — versão adaptada (obrigatória, já no repositório)
 - `data/esco/digitalSkillsCollection_en.csv` — rótulos em inglês (recomendada, porque os
-  datasets estão em inglês). Baixe em https://esco.ec.europa.eu/en/use-esco/download
-  (ESCO dataset v1.2.1, idioma English, formato CSV) e copie o arquivo
-  `digitalSkillsCollection_en.csv` para `data/esco/`.
+  datasets estão em inglês). Baixe em https://esco.ec.europa.eu/en/use-esco/download.
 
 Para conferir: `python -m src.extraction.skills_extractor`
 
@@ -120,6 +118,7 @@ python preparar_pares.py                   # split por currículo (seed 42) + pa
 python finetune_sbert.py --epocas 3 --batch 64 --seq 256 --fp16
 python preparar_amostra_dificil.py         # amostra dirigida para anotação
 python avaliar_comparativo.py              # métricas sobre o gabarito anotado
+python popular_vagas.py --quantidade 300   # cadastra 300 vagas do dataset no banco (interface)
 ```
 
 `amostra_anotacao.py` gera a amostra de 170 pares do gabarito. Não rode de novo depois

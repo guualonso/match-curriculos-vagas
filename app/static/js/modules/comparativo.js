@@ -2,6 +2,7 @@
 import { qs, show, hide, showToast } from './ui.js';
 import { compareMethods } from './api.js';
 import { setupUploadSimples } from './upload.js';
+import { desenharInclinacao } from './graficos.js';
 
 let estado = null;   // { linhas:[{id,el,titulo,pctT,pctS,rankT,rankS,nivelT,nivelS,skills}], ordem:'tfidf'|'sbert', total }
 
@@ -25,8 +26,12 @@ async function handleComparar(getArquivo) {
     const topN = parseInt(qs('#top-n-cmp').value) || 10;
     const data = await compareMethods(arquivo, topN);
     if (!data.tfidf?.length) { showToast('Nenhuma vaga cadastrada para comparar.', 'error'); return; }
-    montar(data.tfidf, data.sbert, topN);
-    showToast('Comparativo gerado. Clique em TF-IDF / SBERT para ver a reordenação.', 'success');
+    if (!Array.isArray(data.pontos)) {
+      showToast('O servidor respondeu sem as posições das vagas: ele está rodando uma versão antiga do código. Reinicie o uvicorn.', 'error');
+      return;
+    }
+    montar(data, topN);
+    showToast('Comparativo gerado. Clique em uma vaga para ver as habilidades.', 'success');
   } catch (err) {
     showToast(err.message, 'error');
   } finally {
@@ -35,29 +40,29 @@ async function handleComparar(getArquivo) {
 }
 
 // ── Montagem ────────────────────────────────────────────────
-function montar(tfidf, sbert, topN) {
-  // ranks globais (as listas já vêm ordenadas por cada método)
-  const rankT = Object.fromEntries(tfidf.map((r, i) => [String(r.job_id), i + 1]));
-  const rankS = Object.fromEntries(sbert.map((r, i) => [String(r.job_id), i + 1]));
-  const mapT  = Object.fromEntries(tfidf.map(r => [String(r.job_id), r]));
-  const mapS  = Object.fromEntries(sbert.map(r => [String(r.job_id), r]));
-  const totalVagas = tfidf.length;
+const nivelDoScore = score => (score >= 0.7 ? 'alto' : score >= 0.4 ? 'médio' : 'baixo');
+
+function montar({ tfidf, sbert, pontos }, topN) {
+  // `pontos` traz score e posição de TODAS as vagas nos dois métodos; as listas
+  // `tfidf` e `sbert` (top 50 de cada) só fornecem os detalhes, como as habilidades.
+  const detalhes = Object.fromEntries([...sbert, ...tfidf].map(r => [String(r.job_id), r]));
+  const totalVagas = pontos.length;
 
   // exibe só a UNIÃO do top-N de cada método
-  const ids = [...new Set([...tfidf, ...sbert].map(r => String(r.job_id)))]
-    .filter(id => rankT[id] <= topN || rankS[id] <= topN);
+  const exibidos = pontos.filter(p => p.posicao_tfidf <= topN || p.posicao_sbert <= topN);
 
   const list = qs('#comparativo-list');
   list.innerHTML = '';
-  const linhas = ids.map(id => {
-    const t = mapT[id], s = mapS[id];
+  const linhas = exibidos.map(p => {
+    const id = String(p.job_id);
     const linha = {
-      id, titulo: t.job_title || '—',
-      pctT: t.similarity_percent, pctS: s.similarity_percent,
-      rankT: rankT[id], rankS: rankS[id],
-      nivelT: (t.compatibility_level || '').toLowerCase(),
-      nivelS: (s.compatibility_level || '').toLowerCase(),
-      skills: (t.matching_skills || []).slice(0, 5),
+      id, titulo: p.job_title || '—',
+      pctT: p.score_tfidf * 100, pctS: p.score_sbert * 100,
+      rankT: p.posicao_tfidf, rankS: p.posicao_sbert,
+      nivelT: nivelDoScore(p.score_tfidf), nivelS: nivelDoScore(p.score_sbert),
+      comuns: detalhes[id]?.matching_skills || [],
+      ausentes: detalhes[id]?.missing_skills || [],
+      extras: detalhes[id]?.extra_skills || [],
     };
     linha.el = criarCard(linha);
     return linha;
@@ -65,8 +70,9 @@ function montar(tfidf, sbert, topN) {
 
   estado = { linhas, ordem: null, total: totalVagas };
   aplicarOrdem('tfidf', false);   // começa no TF-IDF, sem animar
-  renderBanner();
-  renderStats(tfidf, sbert, rankT, rankS, totalVagas);
+  renderStats(pontos, linhas);
+  desenharInclinacao(qs('#grafico-inclinacao'), linhas, topN, abrirVaga);
+  qs('#cmp-total-vagas').textContent = totalVagas;
   qs('#cmp-subtitle').textContent =
     `Exibindo ${linhas.length} vagas (top ${topN} de cada método) de ${totalVagas} avaliadas.`;
   show(qs('#comparativo-section'));
@@ -74,10 +80,19 @@ function montar(tfidf, sbert, topN) {
   qs('#comparativo-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
+function tags(lista, classe) {
+  return lista.length
+    ? lista.map(skill => `<span class="tag ${classe}">${skill}</span>`).join('')
+    : '<span class="tag-empty">—</span>';
+}
+
 function criarCard(l) {
   const el = document.createElement('div');
   el.className = 'cmp-card';
   el.dataset.id = l.id;
+  el.tabIndex = 0;
+  el.setAttribute('role', 'button');
+  el.setAttribute('aria-expanded', 'false');
   el.innerHTML = `
     <div class="cmp-pos">#${l.rankT}</div>
     <div class="cmp-body">
@@ -94,12 +109,45 @@ function criarCard(l) {
           <span class="cmp-val">${l.pctS.toFixed(0)}%</span>
         </div>
       </div>
-      <div class="cmp-move">Posição: TF-IDF <strong>#${l.rankT}</strong> → SBERT <strong>#${l.rankS}</strong></div>
-      <div class="skill-tags cmp-skills">
-        ${l.skills.map(s => `<span class="tag tag-matching">${s}</span>`).join('')}
+      <div class="cmp-move">Posição: TF-IDF <strong>#${l.rankT}</strong> → SBERT <strong>#${l.rankS}</strong>
+        <span class="cmp-abrir">ver habilidades ▾</span></div>
+      <div class="cmp-detalhe" hidden>
+        <div class="skills-group matching">
+          <h4>✅ Em comum (${l.comuns.length})</h4>
+          <div class="skill-tags">${tags(l.comuns, 'tag-matching')}</div>
+        </div>
+        <div class="skills-group missing">
+          <h4>❌ Pedidas pela vaga e ausentes no currículo (${l.ausentes.length})</h4>
+          <div class="skill-tags">${tags(l.ausentes, 'tag-missing')}</div>
+        </div>
+        <div class="skills-group extra">
+          <h4>➕ Extras do currículo (${l.extras.length})</h4>
+          <div class="skill-tags">${tags(l.extras, 'tag-extra')}</div>
+        </div>
       </div>
     </div>`;
+  const alternar = () => {
+    const detalhe = el.querySelector('.cmp-detalhe');
+    detalhe.hidden = !detalhe.hidden;
+    el.classList.toggle('aberto', !detalhe.hidden);
+    el.setAttribute('aria-expanded', String(!detalhe.hidden));
+  };
+  el.addEventListener('click', evento => {
+    if (!evento.target.closest('.cmp-detalhe')) alternar();   // clicar nas habilidades não fecha
+  });
+  el.addEventListener('keydown', evento => { if (evento.key === 'Enter') alternar(); });
   return el;
+}
+
+// Chamado ao clicar em uma linha do gráfico: rola até a vaga, abre e destaca.
+function abrirVaga(id) {
+  const linha = estado?.linhas.find(l => l.id === id);
+  if (!linha) return;
+  const detalhe = linha.el.querySelector('.cmp-detalhe');
+  if (detalhe.hidden) linha.el.click();
+  linha.el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  linha.el.classList.add('destacado');
+  setTimeout(() => linha.el.classList.remove('destacado'), 1600);
 }
 
 // ── Reordenação com animação (FLIP) ─────────────────────────
@@ -149,42 +197,38 @@ function aplicarOrdem(ordem, animar) {
 }
 
 // ── Resumo e estatísticas ───────────────────────────────────
-function renderBanner() {
-  const topo = estado.linhas;
-  const concordamNivel = topo.filter(l => l.nivelT === l.nivelS).length;
-  const banner = qs('#comparativo-banner');
-  banner.innerHTML = `
-    <div class="cmp-veredito">
-      <strong>Como ler</strong>
-      <p>Cada cartão mostra o score dos <em>dois</em> métodos e sua posição em cada ranking.
-         Clique em <strong>TF-IDF</strong> ou <strong>SBERT</strong> acima para reordenar a lista
-         com animação: os cartões que <span style="color:var(--secondary)">sobem</span> ficaram melhor
-         ranqueados pelo SBERT; os que <span style="color:var(--danger)">descem</span>, pior.
-         Entre as vagas exibidas, os dois métodos deram o mesmo nível de compatibilidade em
-         <strong>${concordamNivel} de ${topo.length}</strong>.</p>
-    </div>`;
+function leituraSpearman(valor) {
+  const intensidade = Math.abs(valor);
+  if (intensidade >= 0.7) return valor > 0 ? 'Ordens muito parecidas' : 'Ordens quase invertidas';
+  if (intensidade >= 0.4) return valor > 0 ? 'Ordens moderadamente parecidas' : 'Ordens parcialmente invertidas';
+  if (intensidade >= 0.2) return 'Ordens pouco parecidas: os métodos priorizam vagas diferentes';
+  return 'Sem relação: os métodos ordenam as vagas de formas independentes';
 }
 
-function renderStats(tfidf, sbert, rankT, rankS, total) {
-  const ids = Object.keys(rankT);
-  const st = ids.map(id => (tfidf.find(r => String(r.job_id) === id) || {}).similarity_score || 0);
-  const ss = ids.map(id => (sbert.find(r => String(r.job_id) === id) || {}).similarity_score || 0);
-  const n = ids.length;
+function renderStats(pontos, linhas) {
+  const n = pontos.length;
   if (n < 2) { hide(qs('#comparativo-stats')); return; }
 
-  const mt = st.reduce((a, b) => a + b, 0) / n, ms = ss.reduce((a, b) => a + b, 0) / n;
-  const num  = st.reduce((a, t, i) => a + (t - mt) * (ss[i] - ms), 0);
-  const denT = Math.sqrt(st.reduce((a, t) => a + (t - mt) ** 2, 0));
-  const denS = Math.sqrt(ss.reduce((a, s) => a + (s - ms) ** 2, 0));
-  const corr = denT && denS ? num / (denT * denS) : 0;
-  const maior = Math.max(...ids.map(id => Math.abs(
-    ((tfidf.find(r => String(r.job_id) === id) || {}).similarity_score || 0) -
-    ((sbert.find(r => String(r.job_id) === id) || {}).similarity_score || 0)))) * 100;
-  const top3T = new Set(ids.filter(id => rankT[id] <= 3));
-  const top3S = new Set(ids.filter(id => rankS[id] <= 3));
-  const conc = [...top3T].filter(id => top3S.has(id)).length;
+  // Spearman sobre as posições de todas as vagas (posições únicas, sem empates)
+  const somaDiferencas = pontos.reduce((soma, p) => soma + (p.posicao_tfidf - p.posicao_sbert) ** 2, 0);
+  const spearman = 1 - (6 * somaDiferencas) / (n * (n * n - 1));
 
-  qs('#stat-correlacao').textContent   = corr.toFixed(2);
-  qs('#stat-maior-diff').textContent   = `${maior.toFixed(1)}%`;
-  qs('#stat-concordancia').textContent = `${conc}/3`;
+  const maisMudou = linhas.reduce((maior, l) =>
+    Math.abs(l.rankT - l.rankS) > Math.abs(maior.rankT - maior.rankS) ? l : maior, linhas[0]);
+  const maiorMudanca = Math.abs(maisMudou.rankT - maisMudou.rankS);
+  const top3Tfidf = new Set(pontos.filter(p => p.posicao_tfidf <= 3).map(p => p.job_id));
+  const concordancia = pontos.filter(p => p.posicao_sbert <= 3 && top3Tfidf.has(p.job_id)).length;
+
+  qs('#stat-correlacao').textContent = spearman.toFixed(2).replace('.', ',');
+  qs('#stat-correlacao-leitura').textContent = `${leituraSpearman(spearman)} (${n} vagas)`;
+  qs('#stat-maior-diff').textContent = `${maiorMudanca} ${maiorMudanca === 1 ? 'posição' : 'posições'}`;
+  qs('#stat-maior-diff-leitura').textContent =
+    `${maisMudou.titulo}: #${maisMudou.rankT} no TF-IDF → #${maisMudou.rankS} no SBERT`;
+  qs('#stat-concordancia').textContent = `${concordancia} de 3`;
+  qs('#stat-concordancia-leitura').textContent = [
+    'Os métodos discordam totalmente sobre as melhores vagas',
+    'Concordam em 1 das 3 melhores vagas',
+    'Concordam em 2 das 3 melhores vagas',
+    'Concordam nas 3 melhores vagas',
+  ][concordancia];
 }

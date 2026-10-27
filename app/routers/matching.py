@@ -103,7 +103,7 @@ async def compare_methods(
 
     vagas = database.query(Job).all()
     if not vagas:
-        return {"tfidf": [], "sbert": []}
+        return {"tfidf": [], "sbert": [], "pontos": []}
 
     curriculo = salvar_curriculo(database, dados_upload)
     payload_vagas = montar_payload_vagas(vagas)
@@ -117,7 +117,23 @@ async def compare_methods(
         salvar_historico(database, curriculo.id, resultado, "sbert")
     database.commit()
 
+    # Score e posição de TODAS as vagas nos dois métodos (para os gráficos e para cruzar
+    # os rankings: uma vaga do top-N de um método pode estar fora do top-50 do outro).
+    sbert_por_vaga = {resultado.id_vaga: (posicao, resultado) for posicao, resultado in enumerate(resultados_sbert, start=1)}
+    pontos = [
+        {
+            "job_id": resultado.id_vaga,
+            "job_title": resultado.titulo_vaga,
+            "score_tfidf": resultado.score_final,
+            "score_sbert": sbert_por_vaga[resultado.id_vaga][1].score_final,
+            "posicao_tfidf": posicao,
+            "posicao_sbert": sbert_por_vaga[resultado.id_vaga][0],
+        }
+        for posicao, resultado in enumerate(resultados_tfidf, start=1)
+    ]
+
     return {
         "tfidf": [resultado.para_dict() for resultado in resultados_tfidf[:LIMITE_RESPOSTA_COMPARATIVO]],
         "sbert": [resultado.para_dict() for resultado in resultados_sbert[:LIMITE_RESPOSTA_COMPARATIVO]],
+        "pontos": pontos,
     }

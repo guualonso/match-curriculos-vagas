@@ -99,10 +99,25 @@ class MatcherCurriculoVaga:
     def _pre_processar(self, texto: str) -> str:
         return limpar_texto(texto)
 
+    def _comparar_skills(
+        self, texto_curriculo: str, texto_vaga: str, skills_vaga: Optional[List[str]] = None
+    ) -> Dict:
+        """Habilidades em comum, ausentes e extras. `skills_vaga` (já extraídas, ex.: do banco)
+        evita reextrair a vaga a cada comparação."""
+        skills_curriculo = set(extrator_skills.extrair_lista(texto_curriculo))
+        skills_da_vaga = set(skills_vaga) if skills_vaga is not None else set(extrator_skills.extrair_lista(texto_vaga))
+        return {
+            "em_comum": sorted(skills_curriculo & skills_da_vaga),
+            "ausentes": sorted(skills_da_vaga - skills_curriculo),
+            "extras": sorted(skills_curriculo - skills_da_vaga),
+            "total_curriculo": len(skills_curriculo),
+            "total_vaga": len(skills_da_vaga),
+        }
+
     def _calcular_score_skills(
-        self, texto_curriculo: str, texto_vaga: str
+        self, texto_curriculo: str, texto_vaga: str, comparacao: Optional[Dict] = None
     ) -> Tuple[float, float]:
-        comparacao = extrator_skills.comparar(texto_curriculo, texto_vaga)
+        comparacao = comparacao or self._comparar_skills(texto_curriculo, texto_vaga)
         total_skills_vaga = len(comparacao["em_comum"]) + len(comparacao["ausentes"])
 
         score = (
@@ -112,10 +127,7 @@ class MatcherCurriculoVaga:
         )
 
         # Total de skills únicas detectadas nos dois textos juntos
-        total_detectadas = (
-            len(set(extrator_skills.extrair_lista(texto_curriculo)))
-            + len(set(extrator_skills.extrair_lista(texto_vaga)))
-        )
+        total_detectadas = comparacao["total_curriculo"] + comparacao["total_vaga"]
         # Normaliza pelo limiar, atingiu o limiar = cobertura 100%
         cobertura = min(total_detectadas / LIMIAR_COBERTURA, 1.0)
 
@@ -134,9 +146,11 @@ class MatcherCurriculoVaga:
         score_tfidf_bruto: float,
         id_vaga: str,
         titulo_vaga: str,
+        skills_vaga: Optional[List[str]] = None,
     ) -> ResultadoMatch:
         """Constrói o ResultadoMatch combinando todos os scores."""
-        score_skills, cobertura = self._calcular_score_skills(texto_curriculo, texto_vaga)
+        comparacao = self._comparar_skills(texto_curriculo, texto_vaga, skills_vaga)
+        score_skills, cobertura = self._calcular_score_skills(texto_curriculo, texto_vaga, comparacao)
         confianca = self._fator_confianca(cobertura)
 
         score_tfidf_ajustado = score_tfidf_bruto * confianca
@@ -144,8 +158,6 @@ class MatcherCurriculoVaga:
             self.peso_tfidf * score_tfidf_ajustado + self.peso_skills * score_skills,
             1.0,
         )
-
-        comparacao = extrator_skills.comparar(texto_curriculo, texto_vaga)
 
         aviso = (
             "Poucas skills técnicas detectadas. "
@@ -195,8 +207,10 @@ class MatcherCurriculoVaga:
         if not vagas:
             return []
 
+        # Vagas vindas do banco trazem o texto limpo e as habilidades já calculados no
+        # cadastro ("texto_limpo" e "skills"); assim não são reprocessadas a cada busca.
         curriculo_limpo = self._pre_processar(texto_curriculo)
-        vagas_limpas = [self._pre_processar(v["description"]) for v in vagas]
+        vagas_limpas = [v.get("texto_limpo") or self._pre_processar(v["description"]) for v in vagas]
 
         todos_docs = [curriculo_limpo] + vagas_limpas
         matriz = self.vetorizador.fit_transform(todos_docs)
@@ -209,6 +223,7 @@ class MatcherCurriculoVaga:
                 float(scores_tfidf[i]),
                 vaga.get("id", str(i)),
                 vaga.get("title", "Sem título"),
+                vaga.get("skills"),
             )
             for i, vaga in enumerate(vagas)
         ]

@@ -1,5 +1,6 @@
 import re
 import unicodedata
+from functools import lru_cache
 from typing import List
 
 import spacy
@@ -139,5 +140,7 @@ class LimpadorTexto:
 limpador = LimpadorTexto()
 
 
+@lru_cache(maxsize=50_000)
 def limpar_texto(texto: str) -> str:
+    """Texto pré-processado, com cache: o mesmo texto não passa pelo spaCy duas vezes."""
     return limpador.limpar(texto)

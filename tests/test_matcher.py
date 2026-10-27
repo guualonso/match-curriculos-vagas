@@ -92,3 +92,80 @@ class TestMatcherTfidf:
 def test_rest_so_em_maiusculas():
     assert "rest" in extrator.extrair_lista("APIs REST e serviços RESTful")
     assert "rest" not in extrator.extrair_lista("the rest of the team")
+
+
+def test_pronome_it_ignorado_e_sigla_it_detectada():
+    assert "tecnologia informática" not in extrator.extrair_lista("I built it from the ground up")
+    assert "tecnologia informática" in extrator.extrair_lista("Analista de IT com foco em suporte")
+
+
+def test_alternativo_amplo_nao_rouba_termo_especifico():
+    habilidades = extrator.extrair_lista("Deep learning with TensorFlow and Keras")
+    assert "tensorflow" in habilidades and "keras" in habilidades
+    assert "visão por computador" not in habilidades
+
+
+def test_bi_so_em_maiusculas():
+    assert "inteligência empresarial" in extrator.extrair_lista("Dashboards de BI no Power BI")
+    assert "inteligência empresarial" not in extrator.extrair_lista("bi-weekly meetings")
+
+
+class ModeloFalso:
+    """Substitui o SBERT nos testes: o embedding de uma janela é [nº de palavras, 1], normalizado."""
+    def __init__(self):
+        self.janelas_recebidas = []
+
+    def encode(self, textos, **_):
+        import numpy as np
+        self.janelas_recebidas.extend(textos)
+        emb = np.array([[len(t.split()), 1.0] for t in textos])
+        return emb / np.linalg.norm(emb, axis=1, keepdims=True)
+
+
+def test_janelas_cobrem_o_texto_inteiro_com_sobreposicao():
+    from src.matching.semantic_matcher import dividir_em_janelas
+    palavras = [f"p{i}" for i in range(400)]
+    janelas = dividir_em_janelas(" ".join(palavras))
+    assert all(len(j.split()) <= 150 for j in janelas)
+    assert janelas[-1].split()[-1] == "p399"          # nada é descartado
+    assert janelas[1].split()[0] == "p120"            # 30 palavras de sobreposição
+    assert dividir_em_janelas("texto curto") == ["texto curto"]
+
+
+def test_embedding_do_texto_e_media_das_janelas():
+    import numpy as np
+    from src.matching.semantic_matcher import MatcherSemantico
+    matcher = MatcherSemantico(modelo="falso", usar_janelas=True)
+    matcher._modelo = ModeloFalso()
+    emb = matcher._embeddings(["curto", " ".join(["x"] * 400)])
+    assert len(matcher._modelo.janelas_recebidas) == 1 + 4   # 1 janela + 4 (inícios 0, 120, 240, 360)
+    assert emb.shape == (2, 2)
+    assert np.allclose(np.linalg.norm(emb, axis=1), 1.0)
+
+
+def test_padrao_sem_janelas_le_so_o_inicio():
+    from src.matching.semantic_matcher import MatcherSemantico
+    matcher = MatcherSemantico(modelo="falso")
+    matcher._modelo = ModeloFalso()
+    matcher._embeddings(["curto", " ".join(["x"] * 400)])
+    assert len(matcher._modelo.janelas_recebidas) == 2   # um texto por entrada, sem divisão
+
+
+def test_cache_de_embeddings_codifica_cada_texto_uma_vez():
+    from src.matching.semantic_matcher import MatcherSemantico
+    matcher = MatcherSemantico(modelo="falso")
+    matcher._modelo = ModeloFalso()
+    matcher._embeddings(["vaga a", "vaga b"])
+    emb = matcher._embeddings(["vaga a", "currículo novo", "vaga a"])
+    assert matcher._modelo.janelas_recebidas == ["vaga a", "vaga b", "currículo novo"]
+    assert emb.shape[0] == 3
+
+
+def test_skills_precalculadas_dao_o_mesmo_resultado():
+    matcher = MatcherCurriculoVaga()
+    cv = "Python developer with Docker and PostgreSQL"
+    vaga = "Vaga Python, Docker, Kubernetes"
+    sem = matcher.match_many(cv, [{"id": "1", "title": "v", "description": vaga}])[0]
+    com = matcher.match_many(cv, [{"id": "1", "title": "v", "description": vaga,
+                                   "skills": extrator.extrair_lista(vaga)}])[0]
+    assert sem.score_final == com.score_final and sem.skills_comum == com.skills_comum

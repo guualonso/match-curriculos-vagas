@@ -1,8 +1,3 @@
-"""
-Aplicação FastAPI — Resume Job Matcher
-TCC: Extração de Habilidades Técnicas em Currículos e Análise de Compatibilidade
-"""
-
 from __future__ import annotations
 
 import os

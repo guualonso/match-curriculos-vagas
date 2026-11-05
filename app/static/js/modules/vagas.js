@@ -1,11 +1,10 @@
-// vagas.js — gerenciamento da aba Vagas
 import { qs, show, hide, showToast } from './ui.js';
 import { fetchJobs, saveJob, deleteJobApi } from './api.js';
 import { state } from './state.js';
 import { atualizarTempoEstimado } from './match.js';
 
 export function atualizarContadorVagas() {
-  const total = state.vagasCadastradas.length;
+  const total = state.totalVagas;
   const txt = `${total} vaga${total !== 1 ? 's' : ''} cadastrada${total !== 1 ? 's' : ''}`;
   const b1 = qs('#total-vagas-badge');
   const b2 = qs('#total-vagas-jobs');
@@ -19,13 +18,14 @@ export async function carregarVagas() {
     const data = await fetchJobs(100);
     state.vagasCadastradas = data.jobs || [];
     const totalReal = data.total || state.vagasCadastradas.length;
+    state.totalVagas = totalReal;
     const txt = `${totalReal} vaga${totalReal !== 1 ? 's' : ''} cadastrada${totalReal !== 1 ? 's' : ''}`;
     const b1 = qs('#total-vagas-badge');
     const b2 = qs('#total-vagas-jobs');
     if (b1) b1.innerHTML = `<strong>${txt}</strong>`;
     if (b2) b2.innerHTML = `<strong>${txt}</strong>`;
     atualizarTempoEstimado();
-  } catch { /* silencioso */ }
+  } catch { }
 }
 
 export async function loadJobs() {
@@ -35,6 +35,7 @@ export async function loadJobs() {
     const data = await fetchJobs(100);
     state.vagasCadastradas = data.jobs || [];
     const totalReal = data.total || state.vagasCadastradas.length;
+    state.totalVagas = totalReal;
     const txt = `${totalReal} vaga${totalReal !== 1 ? 's' : ''} cadastrada${totalReal !== 1 ? 's' : ''}`;
     const b2 = qs('#total-vagas-jobs');
     if (b2) b2.innerHTML = `<strong>${txt}</strong>`;
@@ -76,6 +77,7 @@ async function handleDeleteJob(id, btn) {
     await deleteJobApi(id);
     btn.closest('.job-item').remove();
     state.vagasCadastradas = state.vagasCadastradas.filter(v => v.id !== id);
+    state.totalVagas -= 1;
     atualizarContadorVagas();
     showToast('Vaga removida.', 'success');
   } catch {

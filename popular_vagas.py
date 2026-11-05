@@ -1,18 +1,3 @@
-"""
-popular_vagas.py — Cadastra no banco uma amostra das vagas do dataset.
-
-Lê data/processado/vagas_processadas.json (gerado por preparar_vagas.py), sorteia
-`--quantidade` vagas (semente fixa, reproduzível) e grava cada uma com o texto
-pré-processado e as habilidades já calculados, como faz o cadastro pela interface.
-Assim as buscas não precisam reprocessar as vagas.
-
-Também recalcula o texto limpo e as habilidades das vagas que já estavam no banco,
-para que todas usem a versão atual do pré-processamento e do extrator.
-
-Uso:
-    python popular_vagas.py --quantidade 300
-"""
-
 import argparse
 import json
 import os

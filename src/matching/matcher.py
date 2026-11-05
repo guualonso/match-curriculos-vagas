@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 from typing import Dict, List, Optional, Tuple
 
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -9,11 +8,9 @@ from sklearn.metrics.pairwise import cosine_similarity
 from src.preprocessamento.limpador_texto import limpar_texto
 from src.extraction.skills_extractor import extrator as extrator_skills
 
-LIMIAR_COBERTURA = 8
+MINIMO_SKILLS_DETECTADAS = 2
 
 class ResultadoMatch:
-    """Representa o resultado de compatibilidade entre currículo e vaga."""
-
     def __init__(
         self,
         id_vaga: str,
@@ -21,7 +18,6 @@ class ResultadoMatch:
         score_final: float,
         score_tfidf: float,
         score_skills: float,
-        cobertura_skills: float,
         skills_comum: List[str],
         skills_ausentes: List[str],
         skills_extras: List[str],
@@ -33,14 +29,12 @@ class ResultadoMatch:
         self.score_percentual = round(score_final * 100, 2)
         self.score_tfidf = round(score_tfidf, 4)
         self.score_skills = round(score_skills, 4)
-        self.cobertura_skills = round(cobertura_skills, 4)
         self.skills_comum = skills_comum
         self.skills_ausentes = skills_ausentes
         self.skills_extras = skills_extras
         self.aviso = aviso
 
     def nivel_compatibilidade(self) -> str:
-        """Classifica o nível de compatibilidade em Alto, Médio ou Baixo."""
         if self.score_final >= 0.7:
             return "Alto"
         elif self.score_final >= 0.4:
@@ -56,7 +50,6 @@ class ResultadoMatch:
             "similarity_percent": self.score_percentual,
             "tfidf_score": self.score_tfidf,
             "skills_score": self.score_skills,
-            "skill_coverage": self.cobertura_skills,
             "skills_comum": self.skills_comum,
             "skills_ausentes": self.skills_ausentes,
             "skills_extras": self.skills_extras,
@@ -74,7 +67,6 @@ class ResultadoMatch:
 
 
 class MatcherCurriculoVaga:
-
     def __init__(
         self,
         peso_tfidf: float = 0.25,
@@ -102,8 +94,6 @@ class MatcherCurriculoVaga:
     def _comparar_skills(
         self, texto_curriculo: str, texto_vaga: str, skills_vaga: Optional[List[str]] = None
     ) -> Dict:
-        """Habilidades em comum, ausentes e extras. `skills_vaga` (já extraídas, ex.: do banco)
-        evita reextrair a vaga a cada comparação."""
         skills_curriculo = set(extrator_skills.extrair_lista(texto_curriculo))
         skills_da_vaga = set(skills_vaga) if skills_vaga is not None else set(extrator_skills.extrair_lista(texto_vaga))
         return {
@@ -116,28 +106,11 @@ class MatcherCurriculoVaga:
 
     def _calcular_score_skills(
         self, texto_curriculo: str, texto_vaga: str, comparacao: Optional[Dict] = None
-    ) -> Tuple[float, float]:
+    ) -> float:
         comparacao = comparacao or self._comparar_skills(texto_curriculo, texto_vaga)
         total_skills_vaga = len(comparacao["em_comum"]) + len(comparacao["ausentes"])
 
-        score = (
-            len(comparacao["em_comum"]) / total_skills_vaga
-            if total_skills_vaga > 0
-            else 0.0
-        )
-
-        # Total de skills únicas detectadas nos dois textos juntos
-        total_detectadas = comparacao["total_curriculo"] + comparacao["total_vaga"]
-        # Normaliza pelo limiar, atingiu o limiar = cobertura 100%
-        cobertura = min(total_detectadas / LIMIAR_COBERTURA, 1.0)
-
-        return score, cobertura
-
-    def _fator_confianca(self, cobertura: float) -> float:
-        sigmoid = 1.0 / (1.0 + math.exp(-10 * (cobertura - 0.4)))
-        lo = 1.0 / (1.0 + math.exp(4))
-        fator = 0.55 + 0.45 * (sigmoid - lo) / (1.0 - lo)
-        return max(0.55, min(1.0, fator))
+        return len(comparacao["em_comum"]) / total_skills_vaga if total_skills_vaga > 0 else 0.0
 
     def _montar_resultado(
         self,
@@ -148,21 +121,15 @@ class MatcherCurriculoVaga:
         titulo_vaga: str,
         skills_vaga: Optional[List[str]] = None,
     ) -> ResultadoMatch:
-        """Constrói o ResultadoMatch combinando todos os scores."""
         comparacao = self._comparar_skills(texto_curriculo, texto_vaga, skills_vaga)
-        score_skills, cobertura = self._calcular_score_skills(texto_curriculo, texto_vaga, comparacao)
-        confianca = self._fator_confianca(cobertura)
-
-        score_tfidf_ajustado = score_tfidf_bruto * confianca
-        score_final = min(
-            self.peso_tfidf * score_tfidf_ajustado + self.peso_skills * score_skills,
-            1.0,
-        )
+        score_skills = self._calcular_score_skills(texto_curriculo, texto_vaga, comparacao)
+        score_final = min(self.peso_tfidf * score_tfidf_bruto + self.peso_skills * score_skills, 1.0)
+        total_detectadas = comparacao["total_curriculo"] + comparacao["total_vaga"]
 
         aviso = (
             "Poucas skills técnicas detectadas. "
             "O score pode não refletir com precisão a compatibilidade real."
-            if cobertura < 0.25
+            if total_detectadas < MINIMO_SKILLS_DETECTADAS
             else ""
         )
 
@@ -170,15 +137,18 @@ class MatcherCurriculoVaga:
             id_vaga=id_vaga,
             titulo_vaga=titulo_vaga,
             score_final=score_final,
-            score_tfidf=score_tfidf_ajustado,
+            score_tfidf=score_tfidf_bruto,
             score_skills=score_skills,
-            cobertura_skills=cobertura,
             skills_comum=comparacao["em_comum"],
             skills_ausentes=comparacao["ausentes"],
             skills_extras=comparacao["extras"],
             aviso=aviso,
         )
 
+
+    def _cosseno_par(self, curriculo_limpo: str, vaga_limpa: str) -> float:
+        matriz = self.vetorizador.fit_transform([curriculo_limpo, vaga_limpa])
+        return float(cosine_similarity(matriz[0:1], matriz[1:2])[0][0])
 
     def comparar_um(
         self,
@@ -187,12 +157,7 @@ class MatcherCurriculoVaga:
         id_vaga: str = "vaga_1",
         titulo_vaga: str = "Vaga",
     ) -> ResultadoMatch:
-        """Compara um currículo com uma única vaga."""
-        curriculo_limpo = self._pre_processar(texto_curriculo)
-        vaga_limpa = self._pre_processar(texto_vaga)
-
-        matriz = self.vetorizador.fit_transform([curriculo_limpo, vaga_limpa])
-        tfidf_bruto = float(cosine_similarity(matriz[0:1], matriz[1:2])[0][0])
+        tfidf_bruto = self._cosseno_par(self._pre_processar(texto_curriculo), self._pre_processar(texto_vaga))
 
         return self._montar_resultado(
             texto_curriculo, texto_vaga, tfidf_bruto, id_vaga, titulo_vaga
@@ -207,14 +172,10 @@ class MatcherCurriculoVaga:
         if not vagas:
             return []
 
-        # Vagas vindas do banco trazem o texto limpo e as habilidades já calculados no
-        # cadastro ("texto_limpo" e "skills"); assim não são reprocessadas a cada busca.
         curriculo_limpo = self._pre_processar(texto_curriculo)
         vagas_limpas = [v.get("texto_limpo") or self._pre_processar(v["description"]) for v in vagas]
 
-        todos_docs = [curriculo_limpo] + vagas_limpas
-        matriz = self.vetorizador.fit_transform(todos_docs)
-        scores_tfidf = cosine_similarity(matriz[0:1], matriz[1:])[0]
+        scores_tfidf = [self._cosseno_par(curriculo_limpo, vaga_limpa) for vaga_limpa in vagas_limpas]
 
         resultados = [
             self._montar_resultado(
@@ -231,7 +192,6 @@ class MatcherCurriculoVaga:
         resultados.sort(key=lambda r: r.score_final, reverse=True)
         return resultados[:top_n] if top_n else resultados
 
-    # Aliases para compatibilidade com os routers
     def match_one(self, resume_text, job_text, job_id="job_1", job_title="Vaga"):
         return self.comparar_um(resume_text, job_text, job_id, job_title)
 

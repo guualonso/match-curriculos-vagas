@@ -30,7 +30,6 @@ class JobList(BaseModel):
     jobs: List[JobResponse]
 
 
-
 class ResumeResponse(BaseModel):
     id: int
     filename: str
@@ -43,7 +42,6 @@ class ResumeResponse(BaseModel):
 class MatchResultSchema(BaseModel):
     tfidf_score: float = 0.0
     skills_score: float = 0.0
-    skill_coverage: float = 0.0
     warning: str = ""
     job_id: str
     job_title: str
@@ -62,16 +60,54 @@ class MatchResponse(BaseModel):
     results: List[MatchResultSchema]
 
 
+class UnifiedMatchResult(BaseModel):
+    job_id: str
+    job_title: str
+    metodos: List[str]
+    tfidf: MatchResultSchema
+    sbert: MatchResultSchema
+
+
+class UnifiedMatchResponse(BaseModel):
+    resume_id: Optional[int] = None
+    resume_filename: Optional[str] = None
+    total_jobs_analyzed: int
+    results: List[UnifiedMatchResult]
+
+
+class ResumeMatchResult(BaseModel):
+    resume_id: int
+    resume_filename: str
+    metodos: List[str]
+    tfidf: MatchResultSchema
+    sbert: MatchResultSchema
+
+
+class JobResumesResponse(BaseModel):
+    job_id: int
+    job_title: str
+    total_resumes_analyzed: int
+    results: List[ResumeMatchResult]
+
+
+class JobOption(BaseModel):
+    id: int
+    title: str
+    company: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
 class QuickMatchRequest(BaseModel):
-    """Para matching rápido sem upload de arquivo (texto direto)."""
     resume_text: str = Field(..., min_length=10)
     job_description: str = Field(..., min_length=10)
     job_title: Optional[str] = "Vaga"
-    metodo: Optional[str] = "tfidf"
 
 
 class QuickMatchResponse(BaseModel):
-    result: MatchResultSchema
+    metodos: List[str]
+    tfidf: MatchResultSchema
+    sbert: MatchResultSchema
 
 
 class MatchHistoryResponse(BaseModel):
@@ -90,6 +126,15 @@ class MatchHistoryResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class HistoryPairResponse(BaseModel):
+    resume_id: int
+    job_id: int
+    created_at: datetime
+    metodos: List[str]
+    tfidf: Optional[MatchHistoryResponse] = None
+    sbert: Optional[MatchHistoryResponse] = None
 
 
 class HealthResponse(BaseModel):

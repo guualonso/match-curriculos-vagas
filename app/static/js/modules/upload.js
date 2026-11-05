@@ -1,4 +1,3 @@
-// upload.js — lógica de drag-and-drop e seleção de arquivos
 import { show, hide, showToast } from './ui.js';
 
 const EXTS  = ['pdf', 'docx', 'txt'];
@@ -9,10 +8,6 @@ export function validarExtensao(arquivo) {
   return EXTS.includes(ext) ? ext : null;
 }
 
-/**
- * Configura uma zona de upload simples (um arquivo por vez).
- * Retorna getter para o arquivo atual.
- */
 export function setupUploadSimples(dropId, inputId, iconId, nameId, removeId, onFile) {
   const drop   = document.querySelector(`#${dropId}`);
   const input  = document.querySelector(`#${inputId}`);

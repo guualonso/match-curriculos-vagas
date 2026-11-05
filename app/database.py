@@ -1,5 +1,3 @@
-
-
 from __future__ import annotations
 
 import os
@@ -12,7 +10,6 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Session, relationship, sessionmaker
 
-# Configuração da conexão
 
 def _get_database_url() -> str:
     url = os.getenv("DATABASE_URL", "")
@@ -25,7 +22,6 @@ def _get_database_url() -> str:
 
 DATABASE_URL = _get_database_url()
 
-# SQLite precisa de check_same_thread=False para funcionar com FastAPI
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 engine = create_engine(DATABASE_URL, echo=False, pool_pre_ping=True, connect_args=connect_args)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
@@ -35,11 +31,7 @@ class Base(DeclarativeBase):
     pass
 
 
-# Modelos
-
 class Resume(Base):
-    """Currículo enviado pelo usuário."""
-
     __tablename__ = "resumes"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -56,8 +48,6 @@ class Resume(Base):
 
 
 class Job(Base):
-    """Descrição de vaga cadastrada."""
-
     __tablename__ = "jobs"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -76,8 +66,6 @@ class Job(Base):
 
 
 class MatchHistory(Base):
-    """Histórico de matchings realizados."""
-
     __tablename__ = "match_history"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -86,7 +74,7 @@ class MatchHistory(Base):
 
     similarity_score = Column(Float, nullable=False)
     similarity_percent = Column(Float, nullable=False)
-    compatibility_level = Column(String(20))  # Alto / Médio / Baixo
+    compatibility_level = Column(String(20))
 
     matching_skills = Column(JSON)    
     missing_skills = Column(JSON)     
@@ -107,10 +95,8 @@ class MatchHistory(Base):
             f"job={self.job_id} score={self.similarity_score:.2f}>"
         )
 
-# Utilitários
 
 def get_db() -> Generator[Session, None, None]:
-    """Dependency para FastAPI: fornece uma sessão de banco e a fecha ao final."""
     db = SessionLocal()
     try:
         yield db
@@ -119,10 +105,8 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def create_tables() -> None:
-    """Cria todas as tabelas no banco (executar na inicialização)."""
     Base.metadata.create_all(bind=engine)
 
 
 def drop_tables() -> None:
-    """Remove todas as tabelas (usar com cuidado — apenas em dev/testes)."""
     Base.metadata.drop_all(bind=engine)

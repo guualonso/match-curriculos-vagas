@@ -1,25 +1,3 @@
-"""
-preparar_vagas.py — Unifica os datasets de vagas em um único JSON.
-
-Fontes suportadas:
-  * LinkedIn Software Engineering Jobs (asaniczka) — arquivo único 'postings.csv'
-    com colunas: job_title, company, ..., job_summary, job_skills.
-  * Data Science Job Postings and Skills (asaniczka) — três arquivos ligados por
-    'job_link': job_postings.csv (metadados), job_summary.csv (job_summary),
-    job_skills.csv (job_skills).
-
-Saída: data/processado/vagas_processadas.json
-Cada registro:
-  {
-    "id": <job_link>,
-    "fonte": "linkedin_swe" | "data_science",
-    "titulo": str, "empresa": str,
-    "descricao": str,                     # texto natural (usado pelo SBERT e TF-IDF)
-    "skills_dataset": [str, ...],         # skills que já vêm no dataset
-    "skills_extraidas": [str, ...]        # skills detectadas pelo nosso extrator (forma canônica)
-  }
-"""
-
 import argparse
 import csv
 import json
@@ -30,7 +8,6 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from src.extraction.skills_extractor import extrator
 
-# csv com campos grandes (job_summary) estoura o limite padrão
 csv.field_size_limit(min(sys.maxsize, 2**31 - 1))
 
 DIR_RAW        = os.path.join("data", "raw")
@@ -38,7 +15,6 @@ CAMINHO_SAIDA  = os.path.join("data", "processado", "vagas_processadas.json")
 
 
 def _split_skills(valor: str) -> list[str]:
-    """Divide a string de skills do dataset (separada por vírgula) em lista limpa."""
     if not valor:
         return []
     return [s.strip() for s in valor.split(",") if s.strip()]
@@ -76,7 +52,6 @@ def processar_linkedin(caminho: str, limite=None) -> list[dict]:
 
 
 def processar_data_science(dir_raw: str, limite=None) -> list[dict]:
-    # Índices por job_link para juntar os três arquivos
     summaries, skills = {}, {}
     with open(os.path.join(dir_raw, "job_summary.csv"), encoding="utf-8", errors="ignore", newline="") as f:
         for row in csv.DictReader(f):
@@ -123,7 +98,6 @@ def main():
         else:
             print("[aviso] arquivos do Data Science Postings não encontrados — pulando.")
 
-    # remove vagas sem nenhuma skill detectada (não ajudam no matching técnico)
     vagas = [v for v in vagas if v["skills_extraidas"]]
 
     os.makedirs(os.path.dirname(args.saida), exist_ok=True)

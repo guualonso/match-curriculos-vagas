@@ -1,11 +1,3 @@
-"""
-Lista curada de ferramentas e tecnologias usada como COMPLEMENTO da ESCO.
-
-Só entram na extração os termos que a ESCO não cobre (Docker, Kubernetes, React...).
-Os que a ESCO já cobre (Python, SQL, Java...) são associados ao conceito ESCO
-correspondente, para não contar a mesma habilidade duas vezes.
-"""
-
 from typing import Dict, List, Set
 
 BASE_SKILLS: Dict[str, List[str]] = {

@@ -1,11 +1,11 @@
-// match.js — análise de currículos e renderização de resultados
 import { qs, qsa, show, hide, showToast, formatarTempo } from './ui.js';
 import { uploadAndMatch, quickMatch } from './api.js';
-import { renderBreakdown, renderSkillsGrid, renderScoreCircle } from './render.js';
+import { renderSkillsGrid } from './render.js';
+import {
+  renderComposicaoTfidf, renderResultadosUnificados, renderScoresDuplos, renderSeloMetodos, resumoDosResultados,
+} from './resultados.js';
 import { validarExtensao, ICONS } from './upload.js';
 import { state } from './state.js';
-
-// ── Arquivos ────────────────────────────────────────────────
 
 export function adicionarArquivos(novos) {
   for (const f of novos) {
@@ -54,17 +54,12 @@ function setStatusArquivo(nome, status) {
   el.textContent = labels[status] || status;
 }
 
-// ── Tempo estimado ──────────────────────────────────────────
-
 export function atualizarTempoEstimado() {
   const nCurriculos = state.arquivosAnlise.length || 1;
   const escopo      = parseInt(qs('#vagas-escopo')?.value || '0');
-  const nVagas      = escopo > 0
-    ? Math.min(escopo, state.vagasCadastradas.length)
-    : state.vagasCadastradas.length;
+  const nVagas      = escopo > 0 ? Math.min(escopo, state.totalVagas) : state.totalVagas;
   const total = nCurriculos * nVagas;
 
-  // 20 min por candidato triado (Recruiting from Scratch, 2024) — por currículo, não por par
   const tempoManual  = nCurriculos * 20 * 60;
   const tempoSistema = nCurriculos * 2;
 
@@ -86,8 +81,6 @@ export function atualizarTempoEstimado() {
     show(box);
   }
 }
-
-// ── Análise ─────────────────────────────────────────────────
 
 export function setupMatch() {
   const dropZone  = qs('#drop-zone');
@@ -112,6 +105,7 @@ export function setupMatch() {
     }));
 
   qs('#vagas-escopo')?.addEventListener('change', atualizarTempoEstimado);
+  qs('#top-n-analise')?.addEventListener('change', renderizarListaResultados);
 
   btnAnalyze.addEventListener('click', handleAnalyze);
   qs('#btn-quick').addEventListener('click', handleQuickMatch);
@@ -123,8 +117,7 @@ async function handleAnalyze() {
     showToast('Nenhuma vaga cadastrada para comparar.', 'error'); return;
   }
 
-  const escopo = parseInt(qs('#vagas-escopo').value || '0');
-  const topN   = escopo > 0 ? escopo : 9999;
+  const limiteVagas = parseInt(qs('#vagas-escopo').value || '0');
   const btn    = qs('#btn-analyze');
   const text   = qs('#btn-analyze-text');
   const spin   = qs('#btn-analyze-spinner');
@@ -137,8 +130,8 @@ async function handleAnalyze() {
   for (const arquivo of state.arquivosAnlise) {
     setStatusArquivo(arquivo.name, 'processando');
     try {
-      const data = await uploadAndMatch(arquivo, topN, state.metodoAtivo);
-      state.resultadosPorCurriculo[arquivo.name] = data.results;
+      const data = await uploadAndMatch(arquivo, limiteVagas);
+      state.resultadosPorCurriculo[arquivo.name] = { resultados: data.results, totalVagas: data.total_jobs_analyzed };
 
       const id = data.resume_id || data.curriculo_id;
       const el = document.querySelector(`#fi-${arquivo.name.replace(/\W/g, '_')} .file-item-status`);
@@ -180,20 +173,18 @@ async function handleQuickMatch() {
       resume_text:     resumeText,
       job_description: jobText,
       job_title:       qs('#quick-title').value.trim() || 'Vaga',
-      metodo:          state.metodoAtivo,
     });
-    const r  = data.result;
     const el = qs('#quick-result');
     el.innerHTML = `
       <div class="quick-result-header">
-        ${renderScoreCircle(r, '52px')}
+        ${renderScoresDuplos(data, '52px')}
         <div>
-          <strong>${r.job_title || 'Vaga'}</strong>
-          <div class="score-meta">Score: ${(r.similarity_score || 0).toFixed(3)}</div>
-          ${renderBreakdown(r)}
+          <strong>${data.tfidf.job_title || 'Vaga'}</strong>
+          ${renderSeloMetodos(data.metodos)}
+          ${renderComposicaoTfidf(data.tfidf)}
         </div>
       </div>
-      ${renderSkillsGrid(r)}`;
+      ${renderSkillsGrid(data.tfidf)}`;
     show(el);
   } catch (err) {
     showToast(err.message, 'error');
@@ -204,18 +195,10 @@ async function handleQuickMatch() {
   }
 }
 
-// ── Resultados ──────────────────────────────────────────────
-
 function renderizarResultados() {
   const section = qs('#results-section');
   const tabsEl  = qs('#curriculos-tabs');
-  const listEl  = qs('#results-list');
-  const metaEl  = qs('#results-meta');
-  const badgeEl = qs('#results-metodo-badge');
   const nomes   = Object.keys(state.resultadosPorCurriculo);
-
-  badgeEl.textContent = state.metodoAtivo.toUpperCase();
-  badgeEl.className   = `metodo-tag ${state.metodoAtivo}`;
 
   if (nomes.length > 1) {
     show(tabsEl);
@@ -228,94 +211,32 @@ function renderizarResultados() {
       tab.addEventListener('click', () => {
         tabsEl.querySelectorAll('.curriculo-tab').forEach(t => t.classList.remove('active'));
         tab.classList.add('active');
-        state.paginaAtual = 1;
         state.nomeAtivo = tab.dataset.nome;
-        renderizarListaResultados(state.nomeAtivo, listEl, metaEl);
+        renderizarListaResultados();
       });
     });
   } else {
     hide(tabsEl);
   }
 
-  state.paginaAtual = 1;
-  state.nomeAtivo   = nomes[0];
-  renderizarListaResultados(state.nomeAtivo, listEl, metaEl);
+  state.nomeAtivo = nomes[0];
+  renderizarListaResultados();
   show(section);
   section.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-function renderizarListaResultados(nome, listEl, metaEl) {
-  const todos     = state.resultadosPorCurriculo[nome] || [];
-  const total     = todos.length;
-  const totalPags = Math.ceil(total / state.ITENS_POR_PAGINA);
-  const inicio    = (state.paginaAtual - 1) * state.ITENS_POR_PAGINA;
-  const pagina    = todos.slice(inicio, inicio + state.ITENS_POR_PAGINA);
+function renderizarListaResultados() {
+  const nome = state.nomeAtivo;
+  if (!nome) return;
+  const { resultados = [], totalVagas = 0 } = state.resultadosPorCurriculo[nome] || {};
+  const topN = parseInt(qs('#top-n-analise').value, 10);
+  const { compativeis, pelosDois } = resumoDosResultados(resultados);
 
-  metaEl.textContent = `${total} vagas · ${nome}`;
-  listEl.innerHTML = '';
-
-  if (!total) {
-    listEl.innerHTML = '<p class="empty-state">Sem resultados para este currículo.</p>';
-    hide(qs('#pagination'));
-    return;
-  }
-
-  pagina.forEach((r, i) => {
-    const rankGlobal = inicio + i + 1;
-    const card = document.createElement('div');
-    card.className = 'result-card';
-    card.innerHTML = `
-      <span class="result-rank">#${rankGlobal}</span>
-      <div class="result-header-row">
-        ${renderScoreCircle(r)}
-        <div class="result-info">
-          <h3>${r.job_title || '—'}</h3>
-          <div class="company">Score: ${(r.similarity_score || 0).toFixed(3)}</div>
-          ${renderBreakdown(r)}
-        </div>
-      </div>
-      ${renderSkillsGrid(r)}`;
-    listEl.appendChild(card);
-  });
-
-  renderizarPaginacao(totalPags, listEl, metaEl, nome);
-}
-
-function renderizarPaginacao(totalPags, listEl, metaEl, nome) {
-  const pag = qs('#pagination');
-  if (totalPags <= 1) { hide(pag); return; }
-
-  show(pag);
-  const vizinhos = 2;
-  const paginas  = [];
-
-  for (let p = 1; p <= totalPags; p++) {
-    if (p === 1 || p === totalPags ||
-        (p >= state.paginaAtual - vizinhos && p <= state.paginaAtual + vizinhos)) {
-      paginas.push(p);
-    }
-  }
-
-  const itens = [];
-  paginas.forEach((p, idx) => {
-    if (idx > 0 && p - paginas[idx - 1] > 1) itens.push('...');
-    itens.push(p);
-  });
-
-  pag.innerHTML = `
-    <button class="pag-btn pag-nav" data-p="${state.paginaAtual - 1}" ${state.paginaAtual === 1 ? 'disabled' : ''}>‹</button>
-    ${itens.map(p =>
-      p === '...'
-        ? `<span class="pag-ellipsis">…</span>`
-        : `<button class="pag-btn${p === state.paginaAtual ? ' active' : ''}" data-p="${p}">${p}</button>`
-    ).join('')}
-    <button class="pag-btn pag-nav" data-p="${state.paginaAtual + 1}" ${state.paginaAtual === totalPags ? 'disabled' : ''}>›</button>`;
-
-  pag.querySelectorAll('.pag-btn:not([disabled])').forEach(btn => {
-    btn.addEventListener('click', () => {
-      state.paginaAtual = parseInt(btn.dataset.p);
-      renderizarListaResultados(nome, listEl, metaEl);
-      qs('#results-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-  });
+  qs('#results-meta').textContent =
+    `${compativeis} vagas compatíveis de ${totalVagas} analisadas (${pelosDois} pelos dois métodos) · ${nome}`;
+  renderResultadosUnificados(
+    qs('#results-list'), resultados, topN,
+    item => item.job_title || '—',
+    'vagas', 'Nenhuma vaga com nível Médio ou Alto para este currículo.',
+  );
 }

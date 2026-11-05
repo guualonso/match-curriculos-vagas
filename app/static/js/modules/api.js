@@ -1,4 +1,3 @@
-// api.js — comunicação com o backend
 const API = '/api/v1';
 
 export async function apiFetch(path, opts = {}) {
@@ -10,11 +9,10 @@ export async function apiFetch(path, opts = {}) {
   return res.json();
 }
 
-export async function uploadAndMatch(arquivo, topN, metodo = 'tfidf') {
+export async function uploadAndMatch(arquivo, limiteVagas = 0) {
   const form = new FormData();
   form.append('file', arquivo);
-  form.append('top_n', topN);
-  form.append('metodo', metodo);
+  form.append('limite_vagas', limiteVagas);
   const res = await fetch(API + '/match/upload-and-match', { method: 'POST', body: form });
   if (!res.ok) throw new Error((await res.json()).detail || `Erro ${res.status}`);
   return res.json();
@@ -45,6 +43,29 @@ export async function deleteJobApi(id) {
   if (!res.ok) throw new Error('Erro ao remover vaga.');
 }
 
+export async function fetchJobOptions() {
+  return apiFetch('/jobs/opcoes');
+}
+
+export async function fetchResumesForJob(jobId) {
+  return apiFetch(`/match/job/${jobId}/resumes`);
+}
+
+export async function fetchResumes() {
+  return apiFetch('/resumes');
+}
+
+export async function uploadResume(arquivo) {
+  const form = new FormData();
+  form.append('file', arquivo);
+  return apiFetch('/resumes/upload', { method: 'POST', body: form });
+}
+
+export async function deleteResumeApi(id) {
+  const res = await fetch(`${API}/resumes/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Erro ao remover currículo.');
+}
+
 export async function fetchHistory(resumeId) {
   return apiFetch(`/history/resume/${resumeId}`);
 }
@@ -61,13 +82,4 @@ export async function checkHealth() {
     badge.textContent = 'Offline';
     badge.className = 'status-badge status-error';
   }
-}
-
-export async function compareMethods(arquivo, topN) {
-  const form = new FormData();
-  form.append('file', arquivo);
-  form.append('top_n', topN);
-  const res = await fetch('/api/v1/match/compare', { method: 'POST', body: form });
-  if (!res.ok) throw new Error((await res.json()).detail || `Erro ${res.status}`);
-  return res.json();
 }

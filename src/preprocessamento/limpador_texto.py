@@ -8,7 +8,6 @@ import spacy
 from spacy.lang.en.stop_words import STOP_WORDS as STOPWORDS_INGLES
 from spacy.lang.pt.stop_words import STOP_WORDS as STOPWORDS_PORTUGUES
 
-# Carrega os dois modelos; cada texto é processado pelo modelo do seu idioma.
 MODELOS_SPACY = {}
 for idioma, nome_modelo in (("pt", "pt_core_news_sm"), ("en", "en_core_web_sm")):
     try:
@@ -25,7 +24,6 @@ if not MODELOS_SPACY:
 
 
 def detectar_idioma(texto: str) -> str:
-    """'en' ou 'pt', pela contagem de stopwords de cada idioma nas primeiras 300 palavras."""
     palavras = re.findall(r"[a-zà-ú]+", texto.lower())[:300]
     pontos_ingles = sum(palavra in STOPWORDS_INGLES for palavra in palavras)
     pontos_portugues = sum(palavra in STOPWORDS_PORTUGUES for palavra in palavras)
@@ -33,7 +31,6 @@ def detectar_idioma(texto: str) -> str:
 
 
 def modelo_para(texto: str):
-    # Se o modelo do idioma detectado não estiver instalado, usa o que houver.
     return MODELOS_SPACY.get(detectar_idioma(texto)) or next(iter(MODELOS_SPACY.values()))
 
 STOPWORDS_DOMINIO = {
@@ -48,7 +45,6 @@ STOPWORDS_DOMINIO = {
     "responsible", "responsibilities", "position", "role", "knowledge",
     "skills", "skill", "degree", "bachelor", "candidate",
 }
-# Mesma lista sem acentos: o texto já chega sem acentos na checagem de stopwords.
 STOPWORDS_DOMINIO = STOPWORDS_DOMINIO | {
     "".join(c for c in unicodedata.normalize("NFKD", palavra) if not unicodedata.combining(c))
     for palavra in STOPWORDS_DOMINIO
@@ -61,7 +57,7 @@ NORMALIZACOES = {
     r"\breact\.js\b": "reactjs",
     r"\bangular\.js\b": "angularjs",
     r"\bc\+\+": "cplusplus",
-    r"\bc#\b": "csharp",
+    r"\bc#": "csharp",
     r"\.net\b": "dotnet",
     r"\basp\.net\b": "aspnet",
     r"\bml\b": "machinelearning",
@@ -71,7 +67,6 @@ NORMALIZACOES = {
 }
 
 class LimpadorTexto:
-
     def __init__(self, remover_stopwords: bool = True, lematizar: bool = True):
         self.remover_stopwords = remover_stopwords
         self.lematizar = lematizar
@@ -121,7 +116,6 @@ class LimpadorTexto:
         if not texto or not isinstance(texto, str):
             return ""
 
-        # Detecta o idioma no texto original, antes de remover acentos.
         modelo = modelo_para(texto)
 
         texto = self.remover_urls(texto)
@@ -142,5 +136,4 @@ limpador = LimpadorTexto()
 
 @lru_cache(maxsize=50_000)
 def limpar_texto(texto: str) -> str:
-    """Texto pré-processado, com cache: o mesmo texto não passa pelo spaCy duas vezes."""
     return limpador.limpar(texto)

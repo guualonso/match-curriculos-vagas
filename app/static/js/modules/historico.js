@@ -1,6 +1,6 @@
-// historico.js
 import { qs, showToast } from './ui.js';
 import { apiFetch, fetchHistory } from './api.js';
+import { renderSeloMetodos } from './resultados.js';
 
 const LIMITE_PREVIA_SKILLS = 8;
 
@@ -19,18 +19,26 @@ export function setupHistorico() {
   qs('#history-resume-id')?.addEventListener('keydown', evento => {
     if (evento.key === 'Enter') handleLoadHistory();
   });
-  carregarUltimosHistoricos();
 }
 
-// Carrega automaticamente os últimos 10 ao abrir a aba
-async function carregarUltimosHistoricos() {
+export function abrirHistoricoDoCurriculo(idCurriculo) {
+  qs('#history-resume-id').value = idCurriculo;
+  qs('.nav-btn[data-tab="history"]').click();
+  handleLoadHistory();
+}
+
+export async function carregarUltimosHistoricos() {
+  if (qs('#history-resume-id').value.trim()) return;
+  const container = qs('#history-list');
   try {
-    const registros = await apiFetch('/history/recent?limit=10');
-    if (registros?.length) {
-      renderHistorico(registros, qs('#history-list'), 'Últimas análises');
+    const pares = await apiFetch('/history/recent?limit=10');
+    if (pares?.length) {
+      renderHistorico(pares, container, 'Últimas análises');
+    } else {
+      container.innerHTML = '<p class="empty-state">Nenhuma análise registrada ainda.</p>';
     }
-  } catch {
-    // endpoint pode não existir ainda — silencioso
+  } catch (erro) {
+    container.innerHTML = `<p class="empty-state">${erro.message}</p>`;
   }
 }
 
@@ -38,30 +46,19 @@ async function handleLoadHistory() {
   const idCurriculo = qs('#history-resume-id').value.trim();
   if (!idCurriculo) { showToast('Informe o ID do currículo.', 'error'); return; }
 
-  const metodoFiltro = qs('#history-metodo').value;
   const container = qs('#history-list');
   container.innerHTML = '<p class="empty-state">Buscando…</p>';
 
   try {
-    const registros = await fetchHistory(idCurriculo);
-    const registrosFiltrados = metodoFiltro
-      ? registros.filter(registro => normalizarMetodo(registro.metodo) === metodoFiltro)
-      : registros;
-
-    if (!registrosFiltrados.length) {
+    const pares = await fetchHistory(idCurriculo);
+    if (!pares.length) {
       container.innerHTML = '<p class="empty-state">Nenhum histórico encontrado.</p>';
       return;
     }
-    renderHistorico(registrosFiltrados, container, `Currículo #${idCurriculo}`);
+    renderHistorico(pares, container, `Currículo #${idCurriculo}`);
   } catch (erro) {
     container.innerHTML = `<p class="empty-state">${erro.message}</p>`;
   }
-}
-
-// ── Helpers ─────────────────────────────────────────────
-
-function normalizarMetodo(metodo) {
-  return (metodo || 'tfidf').toLowerCase();
 }
 
 function classeDoNivel(nivel) {
@@ -84,26 +81,42 @@ function renderTags(skills, classeTag) {
   return skills.map(skill => `<span class="tag ${classeTag}">${skill}</span>`).join('');
 }
 
-// ── Render ──────────────────────────────────────────────
-
-function renderHistorico(registros, container, titulo) {
+function renderHistorico(pares, container, titulo) {
   container.innerHTML = '';
 
   const cabecalho = document.createElement('div');
   cabecalho.className = 'history-list-header';
   cabecalho.innerHTML = `
     <h2>${titulo}</h2>
-    <span>${registros.length} ${registros.length === 1 ? 'análise' : 'análises'}</span>`;
+    <span>${pares.length} ${pares.length === 1 ? 'par analisado' : 'pares analisados'}</span>`;
   container.appendChild(cabecalho);
 
-  registros.forEach(registro => container.appendChild(criarLinha(registro)));
+  pares.forEach(par => container.appendChild(criarLinha(par)));
 }
 
-function criarLinha(registro) {
-  const metodo = normalizarMetodo(registro.metodo);
+function blocoMetodo(registro, metodo) {
+  const rotulo = metodo === 'tfidf' ? 'TF-IDF' : 'SBERT';
+  if (!registro) {
+    return `<div class="hr-metodo"><div class="hr-score-top"><span class="metodo-tag ${metodo}">${rotulo}</span><span class="hr-nivel">—</span></div></div>`;
+  }
   const nivel = registro.compatibility_level || '—';
   const percentual = Number(registro.similarity_percent) || 0;
-  const { dia, hora } = formatarData(registro.created_at);
+  return `
+    <div class="hr-metodo nivel-${classeDoNivel(nivel)}" title="${rotulo}: ${percentual.toFixed(1)}%">
+      <div class="hr-score-top">
+        <span class="metodo-tag ${metodo}">${rotulo}</span>
+        <span class="hr-score">${percentual.toFixed(1)}%</span>
+        <span class="hr-nivel">${nivel}</span>
+      </div>
+      <div class="hr-bar"><div class="hr-bar-fill" style="width:${Math.min(percentual, 100)}%"></div></div>
+    </div>`;
+}
+
+const NIVEL_DA_LINHA = ['baixo', 'medio', 'alto'];
+
+function criarLinha(par) {
+  const registro = par.tfidf || par.sbert;
+  const { dia, hora } = formatarData(par.created_at);
 
   const skillsEmComum = registro.matching_skills || [];
   const skillsAusentes = registro.missing_skills || [];
@@ -118,30 +131,25 @@ function criarLinha(registro) {
     : '';
 
   const linha = document.createElement('article');
-  linha.className = `history-row nivel-${classeDoNivel(nivel)}`;
+  linha.className = `history-row nivel-${NIVEL_DA_LINHA[par.metodos.length]}`;
   linha.innerHTML = `
     <div class="hr-main">
       <div class="hr-ids">
         <span class="hr-id">
           <span class="hr-id-label">Currículo</span>
-          <strong>#${registro.resume_id}</strong>
+          <strong>#${par.resume_id}</strong>
         </span>
         ${ICONE_SETA}
         <span class="hr-id">
           <span class="hr-id-label">Vaga</span>
-          <strong>#${registro.job_id}</strong>
+          <strong>#${par.job_id}</strong>
         </span>
-        <span class="metodo-tag ${metodo}">${metodo.toUpperCase()}</span>
+        ${renderSeloMetodos(par.metodos)}
       </div>
 
-      <div class="hr-score-block" title="${percentual.toFixed(1)}%">
-        <div class="hr-score-top">
-          <span class="hr-score">${percentual.toFixed(1)}%</span>
-          <span class="hr-nivel">${nivel}</span>
-        </div>
-        <div class="hr-bar">
-          <div class="hr-bar-fill" style="width:${Math.min(percentual, 100)}%"></div>
-        </div>
+      <div class="hr-score-block">
+        ${blocoMetodo(par.tfidf, 'tfidf')}
+        ${blocoMetodo(par.sbert, 'sbert')}
       </div>
 
       <div class="hr-date">
@@ -171,7 +179,6 @@ function criarLinha(registro) {
       </div>
     </div>`;
 
-  // Clique em qualquer ponto da linha expande; o botão garante acesso via teclado
   const botaoExpandir = linha.querySelector('.hr-toggle');
   const detalhe = linha.querySelector('.hr-detail');
 

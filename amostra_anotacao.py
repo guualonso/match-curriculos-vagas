@@ -1,21 +1,3 @@
-"""
-amostra_anotacao.py — Gera a planilha de anotação manual (gabarito).
-
-A partir dos currículos do split de TESTE, monta pares (currículo, vaga) e os
-amostra de forma ESTRATIFICADA pela cobertura de skills (faixas alta/média/baixa),
-para que o gabarito não fique concentrado em uma única classe. A cobertura NÃO é
-exibida na planilha, para não enviesar os anotadores.
-
-Cada anotador (Pedro e Gustavo) preenche a coluna correspondente com:
-    1 = compatível   |   0 = não compatível
-
-Depois, o coeficiente Kappa de Cohen entre as duas colunas mede a concordância,
-as divergências são resolvidas em conjunto, e a coluna final vira o gabarito.
-
-Saída: data/processado/amostra_anotacao.xlsx
-       data/processado/amostra_anotacao_gabarito.json  (mapa id_par -> cobertura, uso interno)
-"""
-
 import argparse
 import json
 import os
@@ -51,14 +33,13 @@ def main():
     p.add_argument("--saida", default=os.path.join(DIR_PROC, "amostra_anotacao.xlsx"))
     args = p.parse_args()
 
-    # ids como string: o JSON do split converte chaves numéricas em texto
     curriculos = {str(c["id"]): c for c in json.load(open(args.curriculos, encoding="utf-8"))}
     vagas = [v for v in json.load(open(args.vagas, encoding="utf-8")) if v["skills_extraidas"]]
     split = json.load(open(args.split, encoding="utf-8"))
     ids_teste = [cid for cid, s in split.items() if s == "teste"]
 
     rng = random.Random(args.seed)
-    estratos = defaultdict(list)  # faixa -> lista de pares
+    estratos = defaultdict(list)
 
     for cid in ids_teste:
         c = curriculos.get(cid)
@@ -76,7 +57,6 @@ def main():
                 "cobertura": round(cob, 3),
             })
 
-    # amostra equilibrada entre as três faixas
     por_faixa = max(1, args.n // 3)
     selecionados = []
     for nome in ("alta", "media", "baixa"):
@@ -86,7 +66,6 @@ def main():
     rng.shuffle(selecionados)
     selecionados = selecionados[: args.n]
 
-    # planilha para os anotadores (sem mostrar a cobertura)
     try:
         import pandas as pd
         df = pd.DataFrame([{
@@ -100,7 +79,6 @@ def main():
         df.to_excel(args.saida, index=False)
         print(f"{len(df)} pares -> {args.saida}")
     except ImportError:
-        # fallback CSV se o pandas/openpyxl não estiver disponível
         import csv
         caminho_csv = args.saida.replace(".xlsx", ".csv")
         with open(caminho_csv, "w", encoding="utf-8", newline="") as f:
@@ -110,7 +88,6 @@ def main():
                 w.writerow([s["id_par"], s["texto_curriculo"], s["texto_vaga"], "", ""])
         print(f"{len(selecionados)} pares -> {caminho_csv} (pandas indisponível, gerado CSV)")
 
-    # mapa interno (cobertura por par) — NÃO entregar aos anotadores
     mapa = {s["id_par"]: {"cobertura": s["cobertura"],
                           "id_curriculo": s["id_curriculo"],
                           "id_vaga": s["id_vaga"]} for s in selecionados}

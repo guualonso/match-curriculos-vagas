@@ -1,36 +1,11 @@
-"""
-avaliar_comparativo.py — Avaliação comparativa TF-IDF x Sentence-BERT.
-
-Roda os dois métodos sobre os mesmos pares (currículo, vaga) do gabarito humano e
-compara o desempenho com métricas de classificação e de ranqueamento.
-
-Entradas (em data/processado/):
-  amostra_anotacao.xlsx  -> colunas: id_par, texto_curriculo, texto_vaga
-  gabarito_final.xlsx    -> colunas: Par (1..N), Compativel (0/1)
-(alinhados por ordem de linha: Par i == linha i-1 da amostra)
-
-Saídas:
-  data/processado/resultados_por_par.csv   -> score de cada método por par
-  impressão das métricas no terminal
-
-Métricas:
-  - Independentes de limiar: AUC-ROC e AP (área sob a curva precisão-revocação).
-  - Classificação: Precisão, Revocação e F1 no limiar de melhor F1 (reportado).
-  - Ranqueamento: NDCG médio por currículo.
-  - Spearman entre os escores dos dois métodos.
-  - Wilcoxon pareado sobre o NDCG por currículo (significância da diferença).
-"""
-
 import argparse
 import os
 import sys
-import numpy as np
-import pandas as pd
-from scipy.stats import spearmanr, wilcoxon
-from sklearn.metrics import (roc_auc_score, average_precision_score,
-                             precision_recall_fscore_support, ndcg_score)
 
-# raiz do projeto (pasta que contém 'src'), rode de onde rodar
+import pandas as pd
+from sklearn.metrics import (accuracy_score, confusion_matrix, f1_score,
+                             precision_score, recall_score, roc_auc_score)
+
 _raiz = os.path.dirname(os.path.abspath(__file__))
 while _raiz != os.path.dirname(_raiz):
     if os.path.isdir(os.path.join(_raiz, "src")):
@@ -42,6 +17,7 @@ DIR = os.path.join("data", "processado")
 AMOSTRA  = os.path.join(DIR, "amostra_anotacao.xlsx")
 GABARITO = os.path.join(DIR, "gabarito_final.xlsx")
 SAIDA    = os.path.join(DIR, "resultados_por_par.csv")
+LIMIAR   = 0.40
 
 
 def carregar(caminho_amostra, caminho_gabarito):
@@ -62,10 +38,6 @@ def carregar(caminho_amostra, caminho_gabarito):
 
 
 def escorar(df, sbert_base=False):
-    """Roda os dois matchers por par e devolve os escores.
-
-    Com sbert_base=True, usa o modelo SBERT original, sem ajuste fino (comparação
-    para medir o efeito do fine-tuning)."""
     from src.matching.matcher import matcher as matcher_tfidf
     from src.matching.semantic_matcher import MatcherSemantico, matcher_semantico
     if sbert_base:
@@ -80,61 +52,26 @@ def escorar(df, sbert_base=False):
     return df
 
 
-def melhor_f1(y, scores):
-    """Varre limiares e devolve (limiar, precisão, revocação, f1) de melhor F1."""
-    melhores = (0.5, 0.0, 0.0, 0.0)
-    for t in sorted(set(scores)):
-        pred = (np.asarray(scores) >= t).astype(int)
-        p, r, f, _ = precision_recall_fscore_support(
-            y, pred, average="binary", zero_division=0)
-        if f > melhores[3]:
-            melhores = (float(t), p, r, f)
-    return melhores
-
-
-def ndcg_por_curriculo(df, col_score):
-    """NDCG por currículo (grupos com >=2 pares e ao menos 1 positivo)."""
-    valores = {}
-    for cid, g in df.groupby("id_curriculo"):
-        if len(g) < 2 or g["label"].sum() == 0:
-            continue
-        valores[cid] = ndcg_score([g["label"].values], [g[col_score].values])
-    return valores
-
-
-def metricas(nome, y, scores):
-    auc = roc_auc_score(y, scores) if len(set(y)) > 1 else float("nan")
-    ap  = average_precision_score(y, scores)
-    t, p, r, f = melhor_f1(y, scores)
+def metricas(nome, y, scores, limiar=LIMIAR):
+    predicao = (scores >= limiar).astype(int)
+    verdadeiro_negativo, falso_positivo, falso_negativo, verdadeiro_positivo = confusion_matrix(y, predicao, labels=[0, 1]).ravel()
+    resultado = {
+        "auc": roc_auc_score(y, scores),
+        "acuracia": accuracy_score(y, predicao),
+        "precisao": precision_score(y, predicao, zero_division=0),
+        "revocacao": recall_score(y, predicao, zero_division=0),
+        "f1": f1_score(y, predicao, zero_division=0),
+    }
     print(f"\n### {nome}")
-    print(f"  AUC-ROC            : {auc:.3f}")
-    print(f"  AP (PR-AUC)        : {ap:.3f}")
-    print(f"  Melhor F1          : {f:.3f}  (limiar={t:.3f})")
-    print(f"  Precisão / Revoc.  : {p:.3f} / {r:.3f}")
-    return {"auc": auc, "ap": ap, "f1": f, "limiar": t, "precisao": p, "revocacao": r}
-
-
-def bootstrap_diff_auc(y, s_a, s_b, n=5000, seed=0):
-    """Diferença de AUC (B - A) com IC95% e p bilateral, por reamostragem dos pares."""
-    rng = np.random.default_rng(seed)
-    y = np.asarray(y); s_a = np.asarray(s_a); s_b = np.asarray(s_b)
-    idx = np.arange(len(y))
-    difs = []
-    for _ in range(n):
-        b = rng.choice(idx, len(idx), replace=True)
-        if len(set(y[b])) < 2:
-            continue
-        difs.append(roc_auc_score(y[b], s_b[b]) - roc_auc_score(y[b], s_a[b]))
-    difs = np.array(difs)
-    obs = roc_auc_score(y, s_b) - roc_auc_score(y, s_a)
-    lo, hi = np.percentile(difs, [2.5, 97.5])
-    p = 2 * min((difs <= 0).mean(), (difs >= 0).mean())
-    return obs, lo, hi, p
-
-
-def combinar_por_posicao(*colunas_de_score):
-    """Média das posições percentuais de cada par nos rankings (combinação sem parâmetros)."""
-    return sum(pd.Series(c).rank(pct=True).values for c in colunas_de_score) / len(colunas_de_score)
+    print(f"  AUC-ROC   : {resultado['auc']:.3f}")
+    print(f"  Acurácia  : {resultado['acuracia']:.3f}   (limiar {limiar:.2f})")
+    print(f"  Precisão  : {resultado['precisao']:.3f}")
+    print(f"  Revocação : {resultado['revocacao']:.3f}")
+    print(f"  F1-score  : {resultado['f1']:.3f}")
+    print(f"  VP {verdadeiro_positivo} | FP {falso_positivo} | FN {falso_negativo} | VN {verdadeiro_negativo} "
+          f"| indicados como compatíveis: {verdadeiro_positivo + falso_positivo}")
+    print(f"  Score médio: compatíveis {scores[y == 1].mean():.3f} | não compatíveis {scores[y == 0].mean():.3f}")
+    return resultado
 
 
 def main():
@@ -142,70 +79,26 @@ def main():
     parser.add_argument("--amostra", default=AMOSTRA, help="Planilha com id_par, texto_curriculo e texto_vaga.")
     parser.add_argument("--gabarito", default=GABARITO, help="Planilha com as colunas Par e Compativel.")
     parser.add_argument("--saida", default=SAIDA, help="CSV com o score de cada par.")
+    parser.add_argument("--limiar", type=float, default=LIMIAR, help="Score mínimo para considerar o par compatível.")
     parser.add_argument("--sbert-base", action="store_true",
                         help="Usa o SBERT original, sem ajuste fino, para medir o efeito do fine-tuning.")
     args = parser.parse_args()
 
     df = carregar(args.amostra, args.gabarito)
-    n = len(df); pos = int(df["label"].sum())
-    print(f"Pares: {n} | compatíveis: {pos} ({pos/n:.1%}) | incompatíveis: {n-pos}")
+    total = len(df); compativeis = int(df["label"].sum())
+    print(f"Pares: {total} | compatíveis: {compativeis} ({compativeis/total:.1%}) | não compatíveis: {total-compativeis}")
     print(f"Currículos distintos: {df['id_curriculo'].nunique()}")
+    print(f"Referência 'tudo não compatível': acurácia {(total-compativeis)/total:.3f} | "
+          f"precisão de um classificador aleatório: {compativeis/total:.3f}")
 
     df = escorar(df, sbert_base=args.sbert_base)
-    if args.sbert_base:
-        print("SBERT: modelo original, SEM ajuste fino")
-    df["score_combinado"] = combinar_por_posicao(df["score_tfidf"], df["score_sbert"])
     df.to_csv(args.saida, index=False, encoding="utf-8")
     print(f"\nEscores salvos em {args.saida}")
 
     y = df["label"].values
-    metricas("TF-IDF (score final do sistema)", y, df["score_tfidf"].values)
-    metricas("Sentence-BERT (" + ("sem ajuste fino" if args.sbert_base else "ajustado") + ")", y, df["score_sbert"].values)
-    metricas("Combinação (média das posições, exploratória)", y, df["score_combinado"].values)
-
-    # significância da diferença de desempenho (bootstrap pareado da AUC)
-    obs, lo, hi, p = bootstrap_diff_auc(y, df["score_tfidf"].values, df["score_sbert"].values)
-    print(f"\n### Diferença de AUC (SBERT - TF-IDF), bootstrap pareado")
-    print(f"  Diferença: {obs:+.3f}  IC95% [{lo:+.3f}, {hi:+.3f}]  p={p:.4f}  "
-          f"({'significativa' if p < 0.05 else 'não significativa'} a 5%)")
-
-    obs, lo, hi, p = bootstrap_diff_auc(y, df["score_tfidf"].values, df["score_combinado"].values)
-    print(f"\n### Diferença de AUC (combinação - TF-IDF), bootstrap pareado")
-    print(f"  Diferença: {obs:+.3f}  IC95% [{lo:+.3f}, {hi:+.3f}]  p={p:.4f}")
-    obs, lo, hi, p = bootstrap_diff_auc(y, df["score_sbert"].values, df["score_combinado"].values)
-    print(f"### Diferença de AUC (combinação - SBERT), bootstrap pareado")
-    print(f"  Diferença: {obs:+.3f}  IC95% [{lo:+.3f}, {hi:+.3f}]  p={p:.4f}")
-
-    # correlação entre os dois métodos
-    rho, pval = spearmanr(df["score_tfidf"], df["score_sbert"])
-    print(f"\n### Correlação entre os métodos")
-    print(f"  Spearman (TF-IDF x SBERT): rho={rho:.3f}  (p={pval:.3g})")
-
-    # NDCG por currículo + Wilcoxon pareado
-    nd_t = ndcg_por_curriculo(df, "score_tfidf")
-    nd_s = ndcg_por_curriculo(df, "score_sbert")
-    comuns = sorted(set(nd_t) & set(nd_s))
-    print(f"\n### Ranqueamento por currículo — NDCG (grupos avaliáveis: {len(comuns)})")
-    if len(comuns) < 10:
-        print("  AVISO: poucos currículos têm >=2 candidatos nesta amostra, então o")
-        print("  NDCG/Wilcoxon por currículo é apenas indicativo. As métricas por par")
-        print("  (AUC, AP, F1) e o bootstrap acima são a base da comparação.")
-    if comuns:
-        vt = [nd_t[c] for c in comuns]; vs = [nd_s[c] for c in comuns]
-        print(f"  NDCG médio TF-IDF : {np.mean(vt):.3f}")
-        print(f"  NDCG médio SBERT  : {np.mean(vs):.3f}")
-        if len(comuns) >= 2 and any(a != b for a, b in zip(vt, vs)):
-            try:
-                w, pw = wilcoxon(vt, vs)
-                print(f"  Wilcoxon pareado (NDCG): W={w:.1f}  p={pw:.4f}  "
-                      f"({'diferença significativa' if pw < 0.05 else 'sem diferença significativa'} a 5%)")
-            except ValueError as e:
-                print(f"  Wilcoxon não aplicável: {e}")
-        else:
-            print("  Wilcoxon não aplicável (poucos grupos ou escores idênticos).")
-    else:
-        print("  Nenhum currículo com >=2 pares e ao menos 1 positivo — NDCG/Wilcoxon indisponíveis.")
-        print("  (Aumente candidatos por currículo na amostra se quiser essa análise.)")
+    metricas("TF-IDF (score final do sistema)", y, df["score_tfidf"].values, args.limiar)
+    metricas("Sentence-BERT (" + ("sem ajuste fino" if args.sbert_base else "ajustado") + ")",
+             y, df["score_sbert"].values, args.limiar)
 
 
 if __name__ == "__main__":

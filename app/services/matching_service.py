@@ -1,5 +1,3 @@
-"""Lógica compartilhada pelos routers: upload, persistência e escolha do motor de matching."""
-
 from __future__ import annotations
 
 import io
@@ -14,7 +12,9 @@ from src.utils.leitor_arquivo import leitor as file_reader
 from src.matching.matcher import MatcherCurriculoVaga as ResumeJobMatcher
 from src.matching.semantic_matcher import matcher_semantico
 
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+MAX_FILE_SIZE = 10 * 1024 * 1024
+
+LIMIAR_COMPATIVEL = 0.40
 
 matcher_tfidf = ResumeJobMatcher()
 
@@ -28,7 +28,6 @@ def obter_motor(metodo: str):
 
 
 async def processar_upload(arquivo: UploadFile) -> dict:
-    """Valida o arquivo, extrai e limpa o texto e extrai as skills."""
     nome_arquivo = arquivo.filename or "curriculo"
 
     if not file_reader.formato_suportado(nome_arquivo):
@@ -61,6 +60,9 @@ async def processar_upload(arquivo: UploadFile) -> dict:
 
 
 def salvar_curriculo(database: Session, dados_upload: dict) -> Resume:
+    existente = database.query(Resume).filter(Resume.raw_text == dados_upload["raw_text"]).first()
+    if existente:
+        return existente
     curriculo = Resume(
         filename=dados_upload["nome_arquivo"],
         raw_text=dados_upload["raw_text"],
@@ -74,7 +76,6 @@ def salvar_curriculo(database: Session, dados_upload: dict) -> Resume:
 
 
 def montar_payload_vagas(vagas: list[Job]) -> list[dict]:
-    """Inclui o texto limpo e as habilidades calculados no cadastro, para não reprocessar as vagas."""
     return [
         {
             "id": str(vaga.id),
@@ -90,8 +91,61 @@ def montar_payload_vagas(vagas: list[Job]) -> list[dict]:
     ]
 
 
+def metodos_compativeis(resultado_tfidf, resultado_sbert, limiar: float = LIMIAR_COMPATIVEL) -> list[str]:
+    return [
+        metodo
+        for metodo, resultado in (("tfidf", resultado_tfidf), ("sbert", resultado_sbert))
+        if resultado.score_final >= limiar
+    ]
+
+
+def nota_para_ordenar(item: dict) -> float:
+    if len(item["metodos"]) == 1:
+        return item[item["metodos"][0]].score_final
+    return (item["tfidf"].score_final + item["sbert"].score_final) / 2
+
+
+def ordenar_por_compatibilidade(itens: list[dict]) -> list[dict]:
+    itens.sort(key=lambda item: (len(item["metodos"]), nota_para_ordenar(item)), reverse=True)
+    return itens
+
+
+def unificar_resultados(resultados_tfidf, resultados_sbert, limiar: float = LIMIAR_COMPATIVEL) -> list[dict]:
+    sbert_por_vaga = {resultado.id_vaga: resultado for resultado in resultados_sbert}
+    itens = []
+    for resultado_tfidf in resultados_tfidf:
+        resultado_sbert = sbert_por_vaga[resultado_tfidf.id_vaga]
+        itens.append({
+            "tfidf": resultado_tfidf,
+            "sbert": resultado_sbert,
+            "metodos": metodos_compativeis(resultado_tfidf, resultado_sbert, limiar),
+        })
+    return ordenar_por_compatibilidade(itens)
+
+
+def curriculos_distintos(database: Session) -> list[Resume]:
+    por_texto: dict[str, Resume] = {}
+    for curriculo in database.query(Resume).order_by(Resume.id.desc()):
+        por_texto.setdefault(curriculo.raw_text, curriculo)
+    return list(por_texto.values())
+
+
+def comparar_vaga_com_curriculos(vaga: Job, curriculos: list[Resume]) -> list[dict]:
+    itens = []
+    for curriculo in curriculos:
+        argumentos = (curriculo.raw_text, vaga.description, str(vaga.id), vaga.title)
+        resultado_tfidf = matcher_tfidf.comparar_um(*argumentos)
+        resultado_sbert = matcher_semantico.comparar_um(*argumentos)
+        itens.append({
+            "curriculo": curriculo,
+            "tfidf": resultado_tfidf,
+            "sbert": resultado_sbert,
+            "metodos": metodos_compativeis(resultado_tfidf, resultado_sbert),
+        })
+    return ordenar_por_compatibilidade(itens)
+
+
 def salvar_historico(database: Session, id_curriculo: int, resultado, metodo: str = "tfidf") -> None:
-    """Adiciona um ResultadoMatch ao histórico (o commit fica a cargo de quem chama)."""
     dados = resultado.para_dict()
     database.add(MatchHistory(
         resume_id=id_curriculo,

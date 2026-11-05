@@ -1,18 +1,3 @@
-"""
-finetune_sbert.py — Ajuste fino (fine-tuning) do SBERT para o domínio de TI.
-
-Usa MultipleNegativesRankingLoss: precisa apenas de pares POSITIVOS
-(currículo, vaga); os negativos são gerados automaticamente dentro de cada lote,
-usando as demais vagas do lote como exemplos negativos. É a loss recomendada
-para tarefas de correspondência/recuperação e simplifica a preparação dos dados.
-
-Entrada:  data/processado/pares_treino.jsonl  (campos: texto_curriculo, texto_vaga)
-Saída:    models/sbert_finetuned/             (modelo pronto para o semantic_matcher)
-
-Exemplo (GPU):
-    python scripts/finetune_sbert.py --epocas 3 --batch 32 --seq 256 --fp16
-"""
-
 import argparse
 import json
 import os
@@ -63,7 +48,7 @@ def main():
     loss = losses.MultipleNegativesRankingLoss(modelo)
 
     passos_por_epoca = max(1, len(loader))
-    warmup = int(passos_por_epoca * args.epocas * 0.1)  # 10% de warmup
+    warmup = int(passos_por_epoca * args.epocas * 0.1)
 
     print(f"Treinando: {args.epocas} épocas, batch {args.batch}, seq {args.seq}, "
           f"lr {args.lr}, fp16={args.fp16}")

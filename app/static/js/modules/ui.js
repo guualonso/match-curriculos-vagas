@@ -1,4 +1,3 @@
-// ui.js — utilitários de interface
 export const qs    = (s, ctx = document) => ctx.querySelector(s);
 export const qsa   = (s, ctx = document) => [...ctx.querySelectorAll(s)];
 export const show  = el => el && el.classList.remove('hidden');

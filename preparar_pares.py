@@ -1,24 +1,3 @@
-"""
-preparar_pares.py — Constrói os pares de treino para o fine-tuning do SBERT.
-
-Estratégia:
-  * Par POSITIVO (currículo, vaga) = a cobertura das skills da vaga pelo currículo
-    é >= LIMIAR (padrão 0,70). Ou seja, o candidato atende >=70% das skills exigidas.
-  * Split POR CURRÍCULO: cada currículo é atribuído a treino/validação/teste, e um
-    mesmo currículo nunca aparece em dois conjuntos (evita vazamento de dados).
-  * O fine-tuning usa MultipleNegativesRankingLoss, que precisa apenas de pares
-    positivos (os negativos são gerados dentro do lote automaticamente).
-
-Entradas:
-  data/processado/curriculos_processados.json  (do importar_dataset.py)
-  data/processado/vagas_processadas.json        (do preparar_vagas.py)
-
-Saídas:
-  data/processado/pares_treino.jsonl     — pares positivos do split de treino
-  data/processado/pares_validacao.jsonl  — pares positivos do split de validação
-  data/processado/split_curriculos.json  — {id_curriculo: "treino"|"validacao"|"teste"}
-"""
-
 import argparse
 import json
 import os
@@ -32,14 +11,12 @@ DIR_PROC = os.path.join("data", "processado")
 
 
 def cobertura(skills_cv: set[str], skills_vaga: set[str]) -> float:
-    """Fração das skills da vaga que o currículo cobre."""
     if not skills_vaga:
         return 0.0
     return len(skills_cv & skills_vaga) / len(skills_vaga)
 
 
 def dividir_curriculos(ids, prop=(0.70, 0.15, 0.15), seed=42):
-    """Atribui cada id de currículo a treino/validacao/teste."""
     ids = sorted(set(ids))
     random.Random(seed).shuffle(ids)
     n = len(ids)
@@ -69,7 +46,6 @@ def main():
     curriculos = json.load(open(args.curriculos, encoding="utf-8"))
     vagas = json.load(open(args.vagas, encoding="utf-8"))
 
-    # Índice invertido skill -> vagas, para não fazer produto cartesiano completo.
     vaga_por_skill = defaultdict(set)
     vagas_por_id = {}
     for v in vagas:
@@ -89,12 +65,11 @@ def main():
         cid = c["id"]
         conjunto = split[cid]
         if conjunto == "teste":
-            continue  # teste fica reservado para a anotação/avaliação
+            continue
         cskills = set(c.get("skills_lista", []))
         if not cskills:
             continue
 
-        # candidatas: vagas que compartilham ao menos uma skill com o currículo
         candidatas = set()
         for s in cskills:
             candidatas |= vaga_por_skill.get(s, set())

@@ -5,22 +5,31 @@ from sqlalchemy.orm import Session
 
 from app.database import Job, get_db
 from app.routers.curriculos import buscar_curriculo_ou_404
-from app.schemas import MatchResponse, MatchResultSchema, QuickMatchRequest, QuickMatchResponse
+from app.routers.vagas import buscar_vaga_ou_404
+from app.schemas import (
+    JobResumesResponse,
+    MatchResponse,
+    MatchResultSchema,
+    QuickMatchRequest,
+    QuickMatchResponse,
+    ResumeMatchResult,
+    UnifiedMatchResponse,
+    UnifiedMatchResult,
+)
 from app.services.matching_service import (
+    comparar_vaga_com_curriculos,
+    curriculos_distintos,
     matcher_tfidf,
+    metodos_compativeis,
     montar_payload_vagas,
-    normalizar_metodo,
-    obter_motor,
     processar_upload,
     salvar_curriculo,
     salvar_historico,
+    unificar_resultados,
 )
 from src.matching.semantic_matcher import matcher_semantico
 
 router = APIRouter(prefix="/match", tags=["Matching"])
-
-SALVAR_NO_HISTORICO = 10  # melhores resultados de cada método gravados no comparativo
-LIMITE_RESPOSTA_COMPARATIVO = 50
 
 
 def montar_resposta(curriculo, total_vagas: int, resultados) -> MatchResponse:
@@ -55,85 +64,83 @@ def match_resume_with_jobs(
 
 @router.post("/quick", response_model=QuickMatchResponse, summary="Match rápido")
 def quick_match(payload: QuickMatchRequest):
-    """Matching rápido sem upload. `metodo`: 'tfidf' (padrão) ou 'sbert'."""
-    resultado = obter_motor(normalizar_metodo(payload.metodo)).match_one(
+    argumentos = dict(
         resume_text=payload.resume_text,
         job_text=payload.job_description,
         job_id="quick",
         job_title=payload.job_title or "Vaga",
     )
-    return QuickMatchResponse(result=MatchResultSchema(**resultado.para_dict()))
-
-
-@router.post("/upload-and-match", response_model=MatchResponse, summary="Upload + Match")
-async def upload_and_match(
-    file: UploadFile = File(...),
-    top_n: int = Form(10),
-    metodo: str = Form("tfidf"),
-    database: Session = Depends(get_db),
-):
-    """Upload do currículo e matching numa única chamada. `metodo`: 'tfidf' (padrão) ou 'sbert'."""
-    dados_upload = await processar_upload(file)
-    curriculo = salvar_curriculo(database, dados_upload)
-
-    vagas = database.query(Job).all()
-    if not vagas:
-        return montar_resposta(curriculo, 0, [])
-
-    metodo = normalizar_metodo(metodo)
-    resultados = obter_motor(metodo).match_many(
-        dados_upload["raw_text"], montar_payload_vagas(vagas), top_n=top_n
+    resultado_tfidf = matcher_tfidf.match_one(**argumentos)
+    resultado_sbert = matcher_semantico.match_one(**argumentos)
+    return QuickMatchResponse(
+        metodos=metodos_compativeis(resultado_tfidf, resultado_sbert),
+        tfidf=MatchResultSchema(**resultado_tfidf.para_dict()),
+        sbert=MatchResultSchema(**resultado_sbert.para_dict()),
     )
 
-    for resultado in resultados:
-        salvar_historico(database, curriculo.id, resultado, metodo)
-    database.commit()
 
-    return montar_resposta(curriculo, len(vagas), resultados)
-
-
-@router.post("/compare", summary="Comparar TF-IDF vs SBERT")
-async def compare_methods(
+@router.post("/upload-and-match", response_model=UnifiedMatchResponse, summary="Upload + Match")
+async def upload_and_match(
     file: UploadFile = File(...),
-    top_n: int = Form(5),
+    limite_vagas: int = Form(0),
     database: Session = Depends(get_db),
 ):
-    """Roda os dois matchers sobre o mesmo currículo e as mesmas vagas."""
     dados_upload = await processar_upload(file)
-
-    vagas = database.query(Job).all()
-    if not vagas:
-        return {"tfidf": [], "sbert": [], "pontos": []}
-
     curriculo = salvar_curriculo(database, dados_upload)
+
+    consulta = database.query(Job).order_by(Job.id.desc())
+    vagas = consulta.limit(limite_vagas).all() if limite_vagas > 0 else consulta.all()
+    if not vagas:
+        return UnifiedMatchResponse(
+            resume_id=curriculo.id, resume_filename=curriculo.filename, total_jobs_analyzed=0, results=[]
+        )
+
     payload_vagas = montar_payload_vagas(vagas)
+    texto = dados_upload["raw_text"]
+    unificados = unificar_resultados(
+        matcher_tfidf.match_many(texto, payload_vagas),
+        matcher_semantico.match_many(texto, payload_vagas),
+    )
 
-    resultados_tfidf = matcher_tfidf.match_many(dados_upload["raw_text"], payload_vagas, top_n=None)
-    resultados_sbert = matcher_semantico.match_many(dados_upload["raw_text"], payload_vagas, top_n=None)
-
-    for resultado in resultados_tfidf[:SALVAR_NO_HISTORICO]:
-        salvar_historico(database, curriculo.id, resultado, "tfidf")
-    for resultado in resultados_sbert[:SALVAR_NO_HISTORICO]:
-        salvar_historico(database, curriculo.id, resultado, "sbert")
+    for item in (item for item in unificados if item["metodos"]):
+        salvar_historico(database, curriculo.id, item["tfidf"], "tfidf")
+        salvar_historico(database, curriculo.id, item["sbert"], "sbert")
     database.commit()
 
-    # Score e posição de TODAS as vagas nos dois métodos (para os gráficos e para cruzar
-    # os rankings: uma vaga do top-N de um método pode estar fora do top-50 do outro).
-    sbert_por_vaga = {resultado.id_vaga: (posicao, resultado) for posicao, resultado in enumerate(resultados_sbert, start=1)}
-    pontos = [
-        {
-            "job_id": resultado.id_vaga,
-            "job_title": resultado.titulo_vaga,
-            "score_tfidf": resultado.score_final,
-            "score_sbert": sbert_por_vaga[resultado.id_vaga][1].score_final,
-            "posicao_tfidf": posicao,
-            "posicao_sbert": sbert_por_vaga[resultado.id_vaga][0],
-        }
-        for posicao, resultado in enumerate(resultados_tfidf, start=1)
-    ]
+    return UnifiedMatchResponse(
+        resume_id=curriculo.id,
+        resume_filename=curriculo.filename,
+        total_jobs_analyzed=len(vagas),
+        results=[
+            UnifiedMatchResult(
+                job_id=item["tfidf"].id_vaga,
+                job_title=item["tfidf"].titulo_vaga,
+                metodos=item["metodos"],
+                tfidf=MatchResultSchema(**item["tfidf"].para_dict()),
+                sbert=MatchResultSchema(**item["sbert"].para_dict()),
+            )
+            for item in unificados
+        ],
+    )
 
-    return {
-        "tfidf": [resultado.para_dict() for resultado in resultados_tfidf[:LIMITE_RESPOSTA_COMPARATIVO]],
-        "sbert": [resultado.para_dict() for resultado in resultados_sbert[:LIMITE_RESPOSTA_COMPARATIVO]],
-        "pontos": pontos,
-    }
+
+@router.get("/job/{job_id}/resumes", response_model=JobResumesResponse, summary="Currículos para uma vaga")
+def curriculos_para_vaga(job_id: int, database: Session = Depends(get_db)):
+    vaga = buscar_vaga_ou_404(database, job_id)
+    curriculos = curriculos_distintos(database)
+    itens = comparar_vaga_com_curriculos(vaga, curriculos)
+    return JobResumesResponse(
+        job_id=vaga.id,
+        job_title=vaga.title,
+        total_resumes_analyzed=len(curriculos),
+        results=[
+            ResumeMatchResult(
+                resume_id=item["curriculo"].id,
+                resume_filename=item["curriculo"].filename,
+                metodos=item["metodos"],
+                tfidf=MatchResultSchema(**item["tfidf"].para_dict()),
+                sbert=MatchResultSchema(**item["sbert"].para_dict()),
+            )
+            for item in itens
+        ],
+    )

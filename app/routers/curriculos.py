@@ -1,3 +1,5 @@
+from typing import List
+
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
@@ -21,6 +23,17 @@ async def upload_resume(file: UploadFile = File(...), database: Session = Depend
     return salvar_curriculo(database, dados_upload)
 
 
+@router.get("", response_model=List[ResumeResponse], summary="Listar currículos")
+def list_resumes(database: Session = Depends(get_db)):
+    return database.query(Resume).order_by(Resume.id.desc()).all()
+
+
 @router.get("/{resume_id}", response_model=ResumeResponse, summary="Detalhar currículo")
 def get_resume(resume_id: int, database: Session = Depends(get_db)):
     return buscar_curriculo_ou_404(database, resume_id)
+
+
+@router.delete("/{resume_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Remover currículo")
+def delete_resume(resume_id: int, database: Session = Depends(get_db)):
+    database.delete(buscar_curriculo_ou_404(database, resume_id))
+    database.commit()

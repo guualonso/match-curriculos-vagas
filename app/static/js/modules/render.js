@@ -1,8 +1,5 @@
-// render.js — funções de renderização de cards e skills
-
 export function renderBreakdown(r) {
   if (!r.tfidf_score && !r.skills_score) return '';
-  const cov  = Math.round((r.skill_coverage || 0) * 100);
   const warn = r.warning
     ? `<div class="breakdown-warn">⚠️ ${r.warning}</div>`
     : '';
@@ -10,7 +7,6 @@ export function renderBreakdown(r) {
     <div class="breakdown-row">
       <span class="breakdown-item">TF-IDF <strong>${((r.tfidf_score  || 0) * 100).toFixed(0)}%</strong></span>
       <span class="breakdown-item">Skills <strong>${((r.skills_score || 0) * 100).toFixed(0)}%</strong></span>
-      <span class="breakdown-item">Cobertura <strong>${cov}%</strong></span>
     </div>${warn}`;
 }
 

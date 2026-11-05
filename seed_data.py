@@ -6,9 +6,6 @@ from app.database import SessionLocal, create_tables, Job, Resume
 from src.preprocessamento.limpador_texto import limpar_texto as clean_text
 from src.extraction.skills_extractor import extrator as skills_extractor
 
-# ---------------------------------------------------------------------------
-# Vagas simuladas (baseadas em vagas reais de LinkedIn/Indeed para TI no Brasil)
-# ---------------------------------------------------------------------------
 
 VAGAS = [
     {
@@ -239,9 +236,6 @@ Diferenciais:
     },
 ]
 
-# ---------------------------------------------------------------------------
-# Currículos simulados
-# ---------------------------------------------------------------------------
 
 CURRICULOS = [
     {
@@ -339,7 +333,6 @@ def seed():
     db = SessionLocal()
 
     try:
-        # Verifica se já há dados
         existing_jobs = db.query(Job).count()
         existing_resumes = db.query(Resume).count()
 

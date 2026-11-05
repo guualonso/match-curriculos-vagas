@@ -1,8 +1,10 @@
+from typing import List
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import Job, get_db
-from app.schemas import JobCreate, JobList, JobResponse
+from app.schemas import JobCreate, JobList, JobOption, JobResponse
 from src.preprocessamento.limpador_texto import limpar_texto as clean_text
 from src.extraction.skills_extractor import extrator as skills_extractor
 
@@ -41,6 +43,11 @@ def list_jobs(
     total = database.query(Job).count()
     vagas = database.query(Job).offset(skip).limit(limit).all()
     return JobList(total=total, jobs=vagas)
+
+
+@router.get("/opcoes", response_model=List[JobOption], summary="Listar todas as vagas (id e título)")
+def list_job_options(database: Session = Depends(get_db)):
+    return database.query(Job).order_by(Job.id.desc()).all()
 
 
 @router.get("/{job_id}", response_model=JobResponse, summary="Detalhar vaga")

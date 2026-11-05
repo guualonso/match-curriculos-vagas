@@ -1,5 +1,3 @@
-"""Testes dos módulos principais: pré-processamento, extração de habilidades (ESCO) e matcher TF-IDF."""
-
 from src.preprocessamento.limpador_texto import LimpadorTexto, detectar_idioma
 from src.extraction.skills_extractor import extrator
 from src.matching.matcher import MatcherCurriculoVaga
@@ -15,6 +13,10 @@ class TestLimpadorTexto:
 
     def test_normaliza_termos_tecnicos(self):
         assert "nodejs" in self.limpador.normalizar_termos_tecnicos("Experiência com node.js")
+
+    def test_csharp_nao_se_perde_na_limpeza(self):
+        assert "csharp" in self.limpador.limpar("Experiência com C# e SQL.").split()
+        assert "csharp" in self.limpador.limpar("Developer: C#, Java").split()
 
     def test_texto_vazio_ou_nulo(self):
         assert self.limpador.limpar("") == ""
@@ -111,7 +113,6 @@ def test_bi_so_em_maiusculas():
 
 
 class ModeloFalso:
-    """Substitui o SBERT nos testes: o embedding de uma janela é [nº de palavras, 1], normalizado."""
     def __init__(self):
         self.janelas_recebidas = []
 
@@ -127,8 +128,8 @@ def test_janelas_cobrem_o_texto_inteiro_com_sobreposicao():
     palavras = [f"p{i}" for i in range(400)]
     janelas = dividir_em_janelas(" ".join(palavras))
     assert all(len(j.split()) <= 150 for j in janelas)
-    assert janelas[-1].split()[-1] == "p399"          # nada é descartado
-    assert janelas[1].split()[0] == "p120"            # 30 palavras de sobreposição
+    assert janelas[-1].split()[-1] == "p399"
+    assert janelas[1].split()[0] == "p120"
     assert dividir_em_janelas("texto curto") == ["texto curto"]
 
 
@@ -138,7 +139,7 @@ def test_embedding_do_texto_e_media_das_janelas():
     matcher = MatcherSemantico(modelo="falso", usar_janelas=True)
     matcher._modelo = ModeloFalso()
     emb = matcher._embeddings(["curto", " ".join(["x"] * 400)])
-    assert len(matcher._modelo.janelas_recebidas) == 1 + 4   # 1 janela + 4 (inícios 0, 120, 240, 360)
+    assert len(matcher._modelo.janelas_recebidas) == 1 + 4
     assert emb.shape == (2, 2)
     assert np.allclose(np.linalg.norm(emb, axis=1), 1.0)
 
@@ -148,7 +149,7 @@ def test_padrao_sem_janelas_le_so_o_inicio():
     matcher = MatcherSemantico(modelo="falso")
     matcher._modelo = ModeloFalso()
     matcher._embeddings(["curto", " ".join(["x"] * 400)])
-    assert len(matcher._modelo.janelas_recebidas) == 2   # um texto por entrada, sem divisão
+    assert len(matcher._modelo.janelas_recebidas) == 2
 
 
 def test_cache_de_embeddings_codifica_cada_texto_uma_vez():
@@ -169,3 +170,75 @@ def test_skills_precalculadas_dao_o_mesmo_resultado():
     com = matcher.match_many(cv, [{"id": "1", "title": "v", "description": vaga,
                                    "skills": extrator.extrair_lista(vaga)}])[0]
     assert sem.score_final == com.score_final and sem.skills_comum == com.skills_comum
+
+
+def test_unificar_resultados_junta_os_dois_metodos():
+    from app.services.matching_service import unificar_resultados
+    from src.matching.matcher import ResultadoMatch
+
+    def resultado(id_vaga, score):
+        return ResultadoMatch(id_vaga, f"Vaga {id_vaga}", score, 0.0, 0.0, [], [], [])
+
+    tfidf = [resultado("1", 0.50), resultado("2", 0.45), resultado("3", 0.10), resultado("4", 0.20), resultado("5", 0.00)]
+    sbert = [resultado("1", 0.60), resultado("2", 0.30), resultado("3", 0.70), resultado("4", 0.30), resultado("5", 0.50)]
+    unificados = unificar_resultados(tfidf, sbert)
+
+    assert [item["tfidf"].id_vaga for item in unificados] == ["1", "3", "5", "2", "4"]
+    assert unificados[0]["metodos"] == ["tfidf", "sbert"]
+    assert unificados[1]["metodos"] == ["sbert"] and unificados[3]["metodos"] == ["tfidf"]
+    assert unificados[4]["metodos"] == []
+
+
+def test_varias_vagas_dao_o_mesmo_score_que_par_a_par():
+    matcher = MatcherCurriculoVaga()
+    cv = "Python developer with Docker and PostgreSQL"
+    vagas = ["Vaga Python, Docker, Kubernetes", "Analista Java Spring e SQL", "Contador com Excel"]
+    varios = {r.id_vaga: r.score_final for r in matcher.match_many(
+        cv, [{"id": str(i), "title": "v", "description": v} for i, v in enumerate(vagas)])}
+    for i, vaga in enumerate(vagas):
+        assert varios[str(i)] == matcher.match_one(cv, vaga, job_id=str(i)).score_final
+
+
+def test_historico_agrupa_os_dois_metodos_do_mesmo_par():
+    from datetime import datetime, timedelta
+    from types import SimpleNamespace
+    from app.routers.historico import agrupar_por_par
+
+    agora = datetime(2026, 11, 2, 12, 0)
+    def registro(curriculo, vaga, metodo, score, minutos):
+        return SimpleNamespace(resume_id=curriculo, job_id=vaga, metodo=metodo,
+                               similarity_score=score, created_at=agora + timedelta(minutes=minutos))
+    registros = [
+        registro(1, 10, "tfidf", 0.30, 0), registro(1, 10, "sbert", 0.55, 0),
+        registro(1, 10, "tfidf", 0.45, 5), registro(1, 10, "sbert", 0.60, 5),
+        registro(1, 20, "tfidf", 0.20, 1), registro(1, 20, "sbert", 0.10, 1),
+    ]
+    pares = agrupar_por_par(registros)
+    assert [(par["resume_id"], par["job_id"]) for par in pares] == [(1, 10), (1, 20)]
+    assert pares[0]["tfidf"].similarity_score == 0.45 and pares[0]["metodos"] == ["tfidf", "sbert"]
+    assert pares[1]["metodos"] == []
+
+
+def test_curriculo_enviado_de_novo_mantem_o_mesmo_id():
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from app.database import Base
+    from app.services.matching_service import salvar_curriculo
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    database = sessionmaker(bind=engine)()
+    dados = {"nome_arquivo": "cv.pdf", "raw_text": "Python e Docker", "cleaned_text": "python docker", "skills": {}}
+    primeiro = salvar_curriculo(database, dados)
+    segundo = salvar_curriculo(database, {**dados, "nome_arquivo": "cv_copia.pdf"})
+    outro = salvar_curriculo(database, {**dados, "raw_text": "Java e Spring"})
+    assert primeiro.id == segundo.id and outro.id != primeiro.id
+
+
+def test_score_tfidf_combina_cosseno_e_habilidades_sem_fator():
+    from src.matching.matcher import MatcherCurriculoVaga
+    matcher = MatcherCurriculoVaga()
+    resultado = matcher.match_one("Desenvolvedor Python", "Desenvolvedor Python e Java")
+    assert resultado.score_skills == 0.5
+    assert abs(resultado.score_final - (0.25 * resultado.score_tfidf + 0.75 * 0.5)) < 1e-3
+    assert matcher.match_one("Cozinheiro", "Motorista").aviso

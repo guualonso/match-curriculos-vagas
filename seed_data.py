@@ -3,12 +3,9 @@ import os
 sys.path.insert(0, os.path.dirname(__file__))
 
 from app.database import SessionLocal, create_tables, Job, Resume
-from src.preprocessamento.limpador_texto import clean_text
-from src.extraction.skills_extractor import extractor as skills_extractor
+from src.preprocessamento.limpador_texto import limpar_texto as clean_text
+from src.extraction.skills_extractor import extrator as skills_extractor
 
-# ---------------------------------------------------------------------------
-# Vagas simuladas (baseadas em vagas reais de LinkedIn/Indeed para TI no Brasil)
-# ---------------------------------------------------------------------------
 
 VAGAS = [
     {
@@ -239,9 +236,6 @@ Diferenciais:
     },
 ]
 
-# ---------------------------------------------------------------------------
-# Currículos simulados
-# ---------------------------------------------------------------------------
 
 CURRICULOS = [
     {
@@ -339,7 +333,6 @@ def seed():
     db = SessionLocal()
 
     try:
-        # Verifica se já há dados
         existing_jobs = db.query(Job).count()
         existing_resumes = db.query(Resume).count()
 
@@ -349,7 +342,7 @@ def seed():
             print("📋 Inserindo vagas simuladas...")
             for v in VAGAS:
                 cleaned = clean_text(v["description"])
-                skills = skills_extractor.extract(v["description"])
+                skills = skills_extractor.extrair(v["description"])
                 job = Job(
                     title=v["title"],
                     company=v["company"],
@@ -368,7 +361,7 @@ def seed():
             print("\n👤 Inserindo currículos simulados...")
             for c in CURRICULOS:
                 cleaned = clean_text(c["raw_text"])
-                skills = skills_extractor.extract(c["raw_text"])
+                skills = skills_extractor.extrair(c["raw_text"])  
                 resume = Resume(
                     filename=c["filename"],
                     raw_text=c["raw_text"],

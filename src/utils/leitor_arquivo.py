@@ -9,8 +9,6 @@ from docx import Document
 
 
 class LeitorArquivo:
-    """Lê e extrai texto de arquivos PDF, DOCX e TXT."""
-
     FORMATOS_SUPORTADOS = {".pdf", ".docx", ".txt"}
 
     def ler(
@@ -18,7 +16,6 @@ class LeitorArquivo:
         origem: Union[str, Path, bytes, io.BytesIO],
         nome_arquivo: str = "",
     ) -> str:
-
         extensao = self._obter_extensao(origem, nome_arquivo)
 
         if extensao == ".pdf":
@@ -40,15 +37,12 @@ class LeitorArquivo:
         origem: Union[str, Path, bytes, io.BytesIO],
         nome_arquivo: str,
     ) -> str:
-
         if isinstance(origem, (str, Path)):
             return Path(origem).suffix.lower()
 
         return Path(nome_arquivo).suffix.lower() if nome_arquivo else ""
 
     def _ler_pdf(self, origem) -> str:
-        """Extrai texto de PDF usando PyMuPDF."""
-
         doc = None
 
         try:
@@ -80,10 +74,7 @@ class LeitorArquivo:
                 doc.close()
 
     def _ler_docx(self, origem) -> str:
-        """Extrai texto de DOCX."""
-
         try:
-
             if isinstance(origem, (str, Path)):
                 doc = Document(str(origem))
 
@@ -103,7 +94,6 @@ class LeitorArquivo:
             for tabela in doc.tables:
                 for linha in tabela.rows:
                     for celula in linha.cells:
-
                         texto = celula.text.strip()
 
                         if texto:
@@ -115,10 +105,7 @@ class LeitorArquivo:
             raise IOError(f"Erro ao ler DOCX: {e}") from e
 
     def _ler_txt(self, origem) -> str:
-        """Lê TXT."""
-
         try:
-
             if isinstance(origem, (str, Path)):
                 return Path(origem).read_text(
                     encoding="utf-8",

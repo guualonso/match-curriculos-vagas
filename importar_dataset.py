@@ -1,9 +1,3 @@
-"""
-Script de importação do dataset do Kaggle.
-Combina múltiplas colunas do CSV para montar o texto completo do currículo,
-processa e salva em data/processado/curriculos_processados.json
-"""
-
 import argparse
 import csv
 import json
@@ -18,7 +12,6 @@ from src.extraction.skills_extractor import extrator
 CAMINHO_RAW        = os.path.join("data", "raw", "resume_data.csv")
 CAMINHO_PROCESSADO = os.path.join("data", "processado", "curriculos_processados.json")
 
-# Colunas do dataset que compõem o texto do currículo
 COLUNAS_TEXTO = [
     "career_objective",
     "skills",
@@ -31,12 +24,10 @@ COLUNAS_TEXTO = [
     "certification_skills",
 ]
 
-# Coluna que representa o cargo/área (usada como categoria)
-COLUNA_CARGO = "\ufeffjob_position_name"  # BOM no início do nome
+COLUNA_CARGO = "\ufeffjob_position_name"
 
 
 def montar_texto(linha: dict) -> str:
-    """Combina as colunas relevantes em um único texto de currículo."""
     partes = []
     for col in COLUNAS_TEXTO:
         valor = linha.get(col, "").strip()
@@ -99,7 +90,6 @@ def importar(limite: int | None = None, visualizar: bool = False):
         print(f"   Válidos processados : {len(registros)}")
         print(f"   Ignorados           : {erros}")
 
-        # Mostra distribuição de skills
         contagem: dict = {}
         for r in registros:
             for s in r["skills_lista"]:
@@ -111,7 +101,6 @@ def importar(limite: int | None = None, visualizar: bool = False):
         print("\n(modo visualização — nenhum arquivo foi salvo)")
         return
 
-    # Salva JSON
     os.makedirs(os.path.dirname(CAMINHO_PROCESSADO), exist_ok=True)
     with open(CAMINHO_PROCESSADO, "w", encoding="utf-8") as f:
         json.dump(registros, f, ensure_ascii=False, indent=2)
@@ -120,7 +109,6 @@ def importar(limite: int | None = None, visualizar: bool = False):
     print(f"   {erros} registros ignorados.")
     print(f"   Salvo em: {CAMINHO_PROCESSADO}")
 
-    # Resumo
     contagem: dict = {}
     for r in registros:
         for s in r["skills_lista"]:

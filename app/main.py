@@ -1,8 +1,3 @@
-"""
-Aplicação FastAPI — Resume Job Matcher
-TCC: Extração de Habilidades Técnicas em Currículos e Análise de Compatibilidade
-"""
-
 from __future__ import annotations
 
 import os
@@ -14,7 +9,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.database import create_tables
-from app.routes import router
+from app.routers import curriculos, historico, matching, vagas
 from app.schemas import HealthResponse
 
 BASE_DIR = Path(__file__).parent
@@ -43,7 +38,8 @@ static_dir = BASE_DIR / "static"
 if static_dir.exists():
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
-app.include_router(router, prefix="/api/v1")
+for modulo in (vagas, curriculos, matching, historico):
+    app.include_router(modulo.router, prefix="/api/v1")
 
 
 @app.on_event("startup")

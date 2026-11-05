@@ -1,251 +1,171 @@
 from __future__ import annotations
 
+import csv
+import os
 import re
+import unicodedata
+from functools import lru_cache
 from typing import Dict, List, Set
 
-BASE_SKILLS: Dict[str, List[str]] = {
+from src.extraction.complemento_skills import ALIASES, BASE_SKILLS
 
-    "linguagens": [
-        "python", "java", "javascript", "typescript", "kotlin", "swift",
-        "cplusplus", "csharp", "go", "rust", "ruby", "php", "scala",
-        "r", "matlab", "perl", "lua", "dart", "groovy", "cobol",
-        "assembly", "vba", "powershell", "bash", "shell",
-    ],
+PASTA_ESCO = os.path.join(os.path.dirname(__file__), "..", "..", "data", "esco")
+ARQUIVO_ESCO_PTBR = os.path.join(PASTA_ESCO, "digitalSkillsCollection_ptbr.csv")
+ARQUIVO_ESCO_EN = os.path.join(PASTA_ESCO, "digitalSkillsCollection_en.csv")
 
-    "frontend": [
-        "html", "css", "reactjs", "vuejs", "angularjs", "angular",
-        "svelte", "jquery", "bootstrap", "tailwind", "sass", "less",
-        "webpack", "vite", "nextjs", "nuxt", "storybook",
-    ],
-
-    "backend": [
-        "nodejs", "django", "flask", "fastapi", "spring", "springboot",
-        "laravel", "rails", "express", "aspnet", "dotnet", "quarkus",
-        "micronaut", "nestjs", "strapi",
-    ],
-
-    "banco_de_dados": [
-        "sql", "mysql", "postgresql", "sqlite", "oracle", "sqlserver",
-        "mongodb", "redis", "cassandra", "dynamodb", "elasticsearch",
-        "neo4j", "firebase", "supabase", "mariadb", "db2",
-    ],
-
-    "cloud": [
-        "aws", "azure", "googlecloudplatform", "heroku", "digitalocean",
-        "vercel", "netlify", "oraclecloud", "ibmcloud", "cloudflare",
-    ],
-
-    "devops": [
-        "docker", "kubernetes", "jenkins", "githubactions", "gitlab",
-        "terraform", "ansible", "prometheus", "grafana", "nginx",
-        "apache", "linux", "git", "circleci", "argocd", "helm",
-        "pulumi", "vagrant",
-    ],
-
-    "infraestrutura": [
-        "vmware", "pfsense", "zabbix", "wireshark", "cisco",
-        "windowsserver", "activedirectory", "hypervv", "proxmox",
-        "virtualbox", "oraclevm", "samba", "putty", "nagios",
-        "openvpn", "mikrotik", "fortinet", "checkpoint",
-        "dhcp", "dns", "ftp", "ssh", "tcp", "vpn",
-        "firewall", "vlan", "routing", "switching",
-    ],
-
-    "sistemas_operacionais": [
-        "ubuntu", "debian", "centos", "redhat", "fedora", "kali",
-        "windows", "macos", "freebsd", "android", "ios",
-    ],
-
-    "seguranca": [
-        "cybersecurity", "pentest", "soc", "siem", "ids", "ips",
-        "owasp", "criptografia", "ssl", "tls", "oauth", "jwt",
-        "lgpd", "gdpr", "iso27001", "nist",
-    ],
-
-    "dados": [
-        "pandas", "numpy", "scipy", "matplotlib", "seaborn", "plotly",
-        "tableau", "powerbi", "spark", "hadoop", "airflow", "dbt",
-        "kafka", "rabbitmq", "looker", "metabase", "qlik",
-    ],
-
-    "ia_ml": [
-        "machinelearning", "deeplearning", "artificialintelligence",
-        "naturallanguageprocessing", "tensorflow", "pytorch", "keras",
-        "scikitlearn", "opencv", "huggingface", "langchain",
-        "xgboost", "lightgbm", "mlflow", "airflow",
-    ],
-
-    "metodologias": [
-        "scrum", "kanban", "agile", "tdd", "bdd", "ddd",
-        "solid", "rest", "graphql", "soap", "microservices", "api",
-        "devops", "gitflow", "cleancode", "cleanarchitecture",
-    ],
-
-    "mobile": [
-        "reactnative", "flutter", "xamarin", "ionic", "swiftui",
-        "jetpackcompose",
-    ],
-
-    "testes": [
-        "junit", "pytest", "jest", "selenium", "cypress", "postman",
-        "swagger", "sonarqube", "testng", "mockito", "locust",
-        "gatling", "k6",
-    ],
-
-    "ferramentas": [
-        "git", "github", "gitlab", "bitbucket", "jira", "confluence",
-        "trello", "notion", "slack", "figma", "vscode",
-    ],
-
-    "erp": [
-        "sap", "salesforce", "servicenow", "totvs", "dynamics",
-        "sharepoint", "powerautomate", "powerbi",
-    ],
+ROTULOS_IGNORADOS: Set[str] = {
+    "less", "source", "ml", "scratch", "chef", "salt", "unity",
+    "eclipse", "ide", "pms", "go", "solid", "rest", "it", "email", "call", "bi",
 }
 
-TODAS_SKILLS: Set[str] = {
-    skill for skills in BASE_SKILLS.values() for skill in skills
+PADROES_SO_MAIUSCULA = {
+    "R": re.compile(r"(?<![\w+#.&])R(?![\w+#&])"),
+    "rest": re.compile(r"\bREST(?:ful)?\b"),
+    "tecnologia informática": re.compile(r"\bIT\b"),
+    "inteligência empresarial": re.compile(r"\bBI\b"),
 }
 
-ALIASES: Dict[str, str] = {
-    "js": "javascript",
-    "ts": "typescript",
-    "py": "python",
-    "c++": "cplusplus",
-    "c#": "csharp",
-    ".net": "dotnet",
-    "golang": "go",
-    "vb": "vba",
-    "ps1": "powershell",
+CATEGORIA_POR_TIPO = {"knowledge": "conhecimento", "skill/competence": "habilidade"}
 
-    "react": "reactjs",
-    "vue": "vuejs",
-    "angular": "angularjs",
-    "next": "nextjs",
-    "next.js": "nextjs",
 
-    "node": "nodejs",
-    "node.js": "nodejs",
-    "fast api": "fastapi",
-    "asp.net": "aspnet",
-    "spring boot": "springboot",
+def sem_acento(texto: str) -> str:
+    return "".join(c for c in unicodedata.normalize("NFKD", texto) if not unicodedata.combining(c))
 
-    "postgres": "postgresql",
-    "mongo": "mongodb",
-    "elastic": "elasticsearch",
-    "sql server": "sqlserver",
-    "maria db": "mariadb",
 
-    "gcp": "googlecloudplatform",
-    "google cloud": "googlecloudplatform",
-    "amazon web services": "aws",
-    "microsoft azure": "azure",
+def chave_rotulo(rotulo: str) -> str:
+    rotulo = re.sub(r"<[^>]+>", "", rotulo)
+    rotulo = re.sub(r"\s*\(.*?\)", "", rotulo)
+    return sem_acento(rotulo).strip().lower()
 
-    "active directory": "activedirectory",
-    "ad ds": "activedirectory",
-    "windows server": "windowsserver",
-    "hyper-v": "hypervv",
-    "hyper v": "hypervv",
-    "oracle vm": "oraclevm",
-    "virtual box": "virtualbox",
-    "pf sense": "pfsense",
-    "open vpn": "openvpn",
 
-    "cyber security": "cybersecurity",
-    "penetration test": "pentest",
-    "penetration testing": "pentest",
+def nome_exibicao(rotulo: str) -> str:
+    rotulo = re.sub(r"<[^>]+>", "", rotulo)
+    return re.sub(r"\s*\(.*?\)", "", rotulo).strip()
 
-    "red hat": "redhat",
-    "kali linux": "kali",
-    "mac os": "macos",
 
-    "ml": "machinelearning",
-    "dl": "deeplearning",
-    "ai": "artificialintelligence",
-    "nlp": "naturallanguageprocessing",
-    "scikit learn": "scikitlearn",
-    "scikit-learn": "scikitlearn",
-    "hugging face": "huggingface",
+def forma_canonica_complemento(texto: str) -> str:
+    texto = texto.lower()
+    texto = ALIASES.get(texto, texto)
+    return re.sub(r"[\s.\-]", "", texto)
 
-    "k8s": "kubernetes",
-    "github actions": "githubactions",
 
-    "power bi": "powerbi",
-    "power-bi": "powerbi",
-    "apache spark": "spark",
+def formas_canonicas(chave: str) -> Set[str]:
+    return {forma_canonica_complemento(chave), re.sub(r"[\s.\-]", "", chave)}
 
-    "clean code": "cleancode",
-    "clean architecture": "cleanarchitecture",
-    "git flow": "gitflow",
 
-    "react native": "reactnative",
-    "jetpack compose": "jetpackcompose",
-    "swift ui": "swiftui",
-
-    "power automate": "powerautomate",
-    "ms dynamics": "dynamics",
-}
+def ler_rotulos(caminho: str) -> List[dict]:
+    with open(caminho, encoding="utf-8", newline="") as arquivo:
+        return list(csv.DictReader(arquivo))
 
 
 class ExtratorSkills:
+    def __init__(self, arquivo_ptbr: str = ARQUIVO_ESCO_PTBR, arquivo_en: str = ARQUIVO_ESCO_EN):
+        self.categoria: Dict[str, str] = {}
+        self.rotulo_para_nome: Dict[str, str] = {}
+        self.usa_rotulos_ingles = os.path.exists(arquivo_en)
 
-    def __init__(self):
-        self.base = BASE_SKILLS
-        self.todas = TODAS_SKILLS
-        self.aliases = ALIASES
+        conceitos = {linha["conceptUri"]: linha for linha in ler_rotulos(arquivo_ptbr)}
+        self.total_conceitos_esco = len(conceitos)
 
-    def _normalizar(self, texto: str) -> str:
-        texto = texto.lower().strip()
-        for alias, canonica in self.aliases.items():
+        preferidos: Dict[str, List[str]] = {uri: [] for uri in conceitos}
+        alternativos: Dict[str, List[str]] = {uri: [] for uri in conceitos}
+        fontes = [ler_rotulos(arquivo_ptbr)]
+        if self.usa_rotulos_ingles:
+            fontes.append(ler_rotulos(arquivo_en))
+        for linhas in fontes:
+            for linha in linhas:
+                uri = linha["conceptUri"]
+                if uri not in conceitos:
+                    continue
+                preferidos[uri].append(linha["preferredLabel"])
+                alternativos[uri].extend(r for r in re.split(r"\n|\s*\|\s*", linha.get("altLabels") or "") if r.strip())
+
+        def adicionar(rotulos_do_conceito: Dict[str, List[str]], bloqueadas: Set[str]) -> None:
+            for uri, rotulos in rotulos_do_conceito.items():
+                nome = nome_exibicao(conceitos[uri]["preferredLabel"])
+                self.categoria.setdefault(nome, CATEGORIA_POR_TIPO.get(conceitos[uri]["skillType"], "habilidade"))
+                for rotulo in rotulos:
+                    chave = chave_rotulo(rotulo)
+                    if len(chave) < 2 or chave in ROTULOS_IGNORADOS or chave in self.rotulo_para_nome:
+                        continue
+                    if formas_canonicas(chave) & bloqueadas:
+                        continue
+                    self.rotulo_para_nome[chave] = nome
+
+        adicionar(preferidos, bloqueadas=set())
+
+        canonicas_preferidas = {forma for chave in self.rotulo_para_nome for forma in formas_canonicas(chave)}
+        canonicas_preferidas.add("r")
+        self.complemento: Dict[str, List[str]] = {}
+        for categoria, termos in BASE_SKILLS.items():
+            for termo in termos:
+                if termo in ROTULOS_IGNORADOS or termo in canonicas_preferidas:
+                    continue
+                self.complemento.setdefault(categoria, []).append(termo)
+                self.categoria[termo] = categoria
+
+        termos_complemento = {termo for termos in self.complemento.values() for termo in termos}
+        adicionar(alternativos, bloqueadas=termos_complemento)
+        self.categoria["rest"] = "metodologias"
+        self.total_complemento = sum(len(termos) for termos in self.complemento.values())
+
+        alternativas = sorted(map(re.escape, self.rotulo_para_nome), key=len, reverse=True)
+        self.padrao_esco = re.compile(r"(?<![\w+#.])(" + "|".join(alternativas) + r")(?![\w+#])")
+
+    def _normalizar_complemento(self, texto: str) -> str:
+        texto = texto.lower()
+        for alias, canonica in ALIASES.items():
             texto = re.sub(r"\b" + re.escape(alias) + r"\b", canonica, texto)
         return texto
 
-    """Quando precisa saber em qual categoria cada skill está, essa extração que utiliza no algoritmo de comparação"""
-    def extrair(self, texto: str) -> Dict[str, List[str]]: 
-        normalizado = self._normalizar(texto)
-        encontradas: Dict[str, List[str]] = {}
+    def extrair(self, texto: str) -> Dict[str, List[str]]:
+        return {categoria: list(nomes) for categoria, nomes in self._extrair_com_cache(texto or "").items()}
 
-        for categoria, skills in self.base.items():
-            correspondencias = []
-            for skill in skills:
-                padrao = r"\b" + re.escape(skill) + r"\b"
-                if re.search(padrao, normalizado):
-                    correspondencias.append(skill)
-            if correspondencias:
-                encontradas[categoria] = correspondencias
+    @lru_cache(maxsize=50_000)
+    def _extrair_com_cache(self, texto: str) -> Dict[str, List[str]]:
+        if not texto:
+            return {}
+        encontradas: Set[str] = {self.rotulo_para_nome[chave] for chave in self.padrao_esco.findall(sem_acento(texto.lower()))}
+        encontradas.update(nome for nome, padrao in PADROES_SO_MAIUSCULA.items() if padrao.search(texto))
 
-        return encontradas
+        normalizado = self._normalizar_complemento(texto)
+        for termos in self.complemento.values():
+            encontradas.update(t for t in termos if re.search(r"\b" + re.escape(t) + r"\b", normalizado))
 
-    """Quando só precisa da lista de skills sem se importar com categoria, essa lista que vai pro banco de dados"""
+        agrupadas: Dict[str, List[str]] = {}
+        for nome in sorted(encontradas):
+            agrupadas.setdefault(self.categoria.get(nome, "habilidade"), []).append(nome)
+        return agrupadas
+
     def extrair_lista(self, texto: str) -> List[str]:
-        categorizadas = self.extrair(texto)
-        return [skill for skills in categorizadas.values() for skill in skills]
+        return [nome for nomes in self.extrair(texto).values() for nome in nomes]
 
-    """Quando já tem uma skill específica e quer saber de onde ela veio, essa lista que é usada na interface web"""
     def categoria_da_skill(self, skill: str) -> str | None:
-        skill = skill.lower()
-        for categoria, skills in self.base.items():
-            if skill in skills:
-                return categoria
-        return None
+        return self.categoria.get(skill)
 
     def comparar(self, texto_curriculo: str, texto_vaga: str) -> Dict[str, List[str]]:
         skills_curriculo = set(self.extrair_lista(texto_curriculo))
         skills_vaga = set(self.extrair_lista(texto_vaga))
-
         return {
             "em_comum": sorted(skills_curriculo & skills_vaga),
-            "ausentes":  sorted(skills_vaga - skills_curriculo),
-            "extras":    sorted(skills_curriculo - skills_vaga),
+            "ausentes": sorted(skills_vaga - skills_curriculo),
+            "extras": sorted(skills_curriculo - skills_vaga),
         }
+
 
 extrator = ExtratorSkills()
 
+
 def extrair_skills(texto: str) -> Dict[str, List[str]]:
-    """Função extrai skills categorizadas."""
     return extrator.extrair(texto)
 
 
 def extrair_skills_lista(texto: str) -> List[str]:
-    """Função retorna lista plana de skills."""
     return extrator.extrair_lista(texto)
+
+
+if __name__ == "__main__":
+    print(f"Conceitos ESCO: {extrator.total_conceitos_esco} | rótulos de busca: {len(extrator.rotulo_para_nome)} "
+          f"| rótulos em inglês: {'sim' if extrator.usa_rotulos_ingles else 'não'} | complemento: {extrator.total_complemento}")
+    exemplo = "Python developer with SQL, Docker, Kubernetes and React. Less than 2 years building from scratch. R&D team."
+    print(extrator.comparar(exemplo, "Vaga: Python, banco de dados PostgreSQL, Kubernetes, linguagem R."))
